@@ -1,6 +1,15 @@
 # Poiesis
 
-A command-line wizard for provisioning, configuring, and onboarding LXC containers and QEMU virtual machines in a Proxmox VE homelab cluster. Handles the full lifecycle from resource creation through post-deployment configuration, DNS registration, Ansible inventory registration, TTL-based auto-expiry, and batch cleanup — all from a single guided session or a pre-built deployment file. Companion decommission scripts reverse the process cleanly.
+> *From the Greek: the act of making, bringing something into being.*
+> *Pronounced: poy-EE-sis*
+
+**Poiesis** is a command-line wizard for provisioning, configuring, and onboarding LXC containers and QEMU virtual machines in a Proxmox VE homelab cluster. Handles the full lifecycle from resource creation through post-deployment configuration, DNS registration, Ansible inventory registration, TTL-based auto-expiry, and batch cleanup — all from a single guided session or a pre-built deployment file. Companion decommission scripts reverse the process cleanly.
+
+Poiesis is part of the **[Praxis Suite](https://github.com/PraxisSuite)** — an open source ecosystem of homelab management tools built around the idea that a homelab should not be a second job.
+
+> *"The philosopher Aristotle held that there were three basic activities of humans: theoria (thinking), poiesis (making), and praxis (doing)."*
+
+The suite takes its name and its tools from Aristotle's three fundamental human activities. Poiesis — the act of making — is the builder. It provisions the infrastructure everything else runs on. Its companions are [Poreia](https://github.com/PraxisSuite/Poreia) *(por-EE-ah)*, which carries and packages configs between hosts, and [Theoria](https://github.com/PraxisSuite/Theoria) *(theh-OH-ree-ah)*, which observes and documents everything that exists.
 
 > **Disclaimer:** This tool is provided **as-is**, without warranty or support of any kind. It was built for a specific homelab environment and is shared for reference and reuse. See [Submitting an Issue](#submitting-an-issue) if you encounter a problem.
 
@@ -213,12 +222,11 @@ The scripts auto-activate the virtualenv at startup, so you can run them with `p
 
 ## Documentation
 
-| Page | Contents |
+| Document | Contents |
 |---|---|
-| [docs/configuration.md](docs/configuration.md) | Proxmox API token setup, SSH key auth, full `config.yaml` reference, `cloud-images.yaml`, `--config` flag, multi-node failover |
-| [docs/configure.md](docs/configure.md) | Interactive config wizard — build, edit, and validate `config.yaml` with guided prompts |
-| [docs/deploy-lxc.md](docs/deploy-lxc.md) | All `deploy_lxc.py` flags, interactive walkthrough, static IP and DHCP deployment, deploy from file, silent mode, dry-run, TTL, VLAN check, preflight, deployment logs, example scenarios |
-| [docs/deploy-vm.md](docs/deploy-vm.md) | All `deploy_vm.py` flags, interactive walkthrough, deploy from file, silent mode, dry-run, TTL, VLAN check, preflight |
+| [docs/configuration.md](docs/configuration.md) | All `config.yaml` fields, creating a Proxmox API token, SSH key setup, DNS zone file config, Ansible inventory server setup |
+| [docs/deploy-lxc.md](docs/deploy-lxc.md) | `deploy_lxc.py` flags, interactive and file-based mode, DHCP vs static IP, `--silent`, deployment logs, example scenarios |
+| [docs/deploy-vm.md](docs/deploy-vm.md) | `deploy_vm.py` flags, cloud-init, multi-OS support, `--silent`, deployment logs, example scenarios |
 | [docs/decommission.md](docs/decommission.md) | `decomm_lxc.py` and `decomm_vm.py` flags, interactive and file-based mode, `--purge`, `--silent`, decommission logs, example scenarios |
 | [docs/batch.md](docs/batch.md) | `deploy.py` and `decomm.py` — batch operations, `--parallel`, `--validate`, `--batch-dir`, `--yolo`, `--ttl`, `--purge` |
 | [docs/expiry.md](docs/expiry.md) | All `expire.py` flags, `--check` output example, `--reap`, `--renew`, TTL format reference |
@@ -389,4 +397,4 @@ See `known-bugs.md` in the project root for a list of known issues, their curren
 
 ---
 
-*Built for a Proxmox homelab. Shared without warranty. Use at your own risk.*
+*Poiesis is part of the [Praxis Suite](https://github.com/PraxisSuite) — open source homelab management tools built around the idea that a homelab should not be a second job.*
