@@ -224,7 +224,7 @@ stay current without manual intervention.
 - Implementation options (in order of preference):
   1. SSH to the dev/documenter server and run the documenter script directly.
   2. Invoke a webhook or CI job that pulls and re-runs the documenter.
-- Config keys under a new `lab_documenter:` block in `config.yaml`:
+- Config keys under a new `theoria:` block in `config.yaml`:
   - `enabled: true/false`
   - `server:` (host running Theoria)
   - `ssh_user:`
