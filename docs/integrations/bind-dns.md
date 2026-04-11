@@ -4,7 +4,7 @@
 
 ### About
 
-Labinator registers and removes DNS A records (and PTR records where reverse zones exist)
+Poiesis registers and removes DNS A records (and PTR records where reverse zones exist)
 on a BIND DNS server via SSH. This happens automatically at the end of every deployment
 and at the start of every decommission.
 
@@ -12,7 +12,7 @@ and at the start of every decommission.
 
 ## How it Works
 
-Labinator SSHes to the DNS server and runs a small Python script (written to `/tmp/` on
+Poiesis SSHes to the DNS server and runs a small Python script (written to `/tmp/` on
 the DNS server, executed, then deleted) that directly modifies the BIND zone files and
 reloads the service. No BIND API or `nsupdate` is used — zone files are edited in place.
 
@@ -78,7 +78,7 @@ Reverse zone file /var/lib/bind/220.220.10.in-addr.arpa.hosts not found — skip
 ```
 
 This is **expected behavior** if reverse zones have not been configured on your BIND
-server. It is not a labinator bug. The forward A record is always registered regardless.
+server. It is not a Poiesis bug. The forward A record is always registered regardless.
 
 **To enable PTR records:** Create the reverse zone files on the BIND server for each
 subnet in use. For subnet `10.220.220.0/24`, create:
@@ -90,7 +90,7 @@ subnet in use. For subnet `10.220.220.0/24`, create:
 
 ## DHCP Deployments and DNS
 
-For DHCP-deployed resources, the IP is not known at the start of deployment. Labinator
+For DHCP-deployed resources, the IP is not known at the start of deployment. Poiesis
 waits for the DHCP lease to be discovered (via qemu-guest-agent for VMs, or polling for
 LXC), then stores the discovered IP in `assigned_ip` in the deployment file.
 
@@ -103,8 +103,8 @@ works correctly for DHCP deployments even if the IP was never static.
 ## Known Limitations
 
 - **No reverse zones by default** — PTR records are skipped unless reverse zone files
-  exist on the BIND server. This is an infrastructure gap, not a labinator limitation.
-- **Direct zone file editing** — labinator modifies zone files in place rather than using
+  exist on the BIND server. This is an infrastructure gap, not a Poiesis limitation.
+- **Direct zone file editing** — Poiesis modifies zone files in place rather than using
   `nsupdate` or the BIND API. This is intentional for simplicity and compatibility with
   plain BIND installations, but means BIND must be reloaded after each change.
 - **Single provider** — only BIND is currently supported. PowerDNS, Technitium, and

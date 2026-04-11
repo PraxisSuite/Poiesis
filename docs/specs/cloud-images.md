@@ -18,7 +18,7 @@ the deploy script itself.
 ## File Location
 
 ```
-labinator/
+Poiesis/
 └── cloud-images.yaml
 ```
 

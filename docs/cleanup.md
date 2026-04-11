@@ -133,7 +133,7 @@ Actions loaded from: cleanup-plan.json
 After writing, the script prints the full path of the saved file and exits — it never proceeds to action selection or execution.
 
 ```
-✓ Plan written (3 resource(s)): /home/user/projects/labinator/cleanup-plan.json
+✓ Plan written (3 resource(s)): /home/user/projects/Poiesis/cleanup-plan.json
 Edit the file, then run:
   ./cleanup_tagged.py --list-file cleanup-plan.json
 ```

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# labinator setup script
+# Poiesis setup script
 # Installs ALL required system packages and Python dependencies
 # ============================================================
 set -euo pipefail
@@ -16,7 +16,7 @@ fail() { echo -e "${RED}✗ ERROR:${NC} $*"; exit 1; }
 section() { echo ""; echo "─── $* ───"; }
 
 echo "=============================================="
-echo "  labinator — Dependency Setup"
+echo "  Poiesis — Dependency Setup"
 echo "=============================================="
 
 # ──────────────────────────────────────────────
@@ -119,7 +119,7 @@ ok "pip upgraded: $($PIP --version)"
 section "Python packages (from requirements.txt)"
 
 if [ ! -f requirements.txt ]; then
-    fail "requirements.txt not found. Run this script from the labinator directory."
+    fail "requirements.txt not found. Run this script from the Poiesis directory."
 fi
 
 echo "Installing packages — this may take a minute..."
@@ -180,7 +180,7 @@ echo -e "  ${GREEN}Setup complete — all dependencies installed${NC}"
 echo "=============================================="
 echo ""
 echo "Next steps:"
-echo "  1. Configure labinator:"
+echo "  1. Configure Poiesis:"
 echo "     The easy way — run the interactive config wizard:"
 echo "       python3 configure.py"
 echo "     Or manually:"

@@ -4,7 +4,7 @@
 
 ### About
 
-This guide covers the one-time setup required before any labinator script will run: creating a Proxmox API token, authorizing your SSH key on the cluster nodes, and filling in `config.yaml`. Once configured, the scripts handle everything else automatically.
+This guide covers the one-time setup required before any Poiesis script will run: creating a Proxmox API token, authorizing your SSH key on the cluster nodes, and filling in `config.yaml`. Once configured, the scripts handle everything else automatically.
 
 This will be the first and, hopefully, only challenge in getting running.
 
@@ -168,7 +168,7 @@ package_profiles:
     packages: [docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin]
     tags: [Docker]
   monitoring-node:
-    packages: [prometheus-node-exporter, snmpd]
+    packages: [prometheus-node-exPoreia, snmpd]
     tags: [Monitoring]
   dev-tools:
     packages: [git, vim, tmux, make, python3-pip]
@@ -290,13 +290,13 @@ python3 expire.py --config /path/to/my-config.yaml
 python3 cleanup_tagged.py --config /path/to/my-config.yaml
 ```
 
-The default is `config.yaml` in the project root. This flag is useful for running multiple labinator environments or for CI/CD pipelines with environment-specific configs or to manage multiple environments, like; Prod, Dev, QA, UAT, etc.
+The default is `config.yaml` in the project root. This flag is useful for running multiple Poiesis environments or for CI/CD pipelines with environment-specific configs or to manage multiple environments, like; Prod, Dev, QA, UAT, etc.
 
 ---
 
 ## Multi-Node / Failover
 
-labinator supports automatic failover across Proxmox cluster nodes. Configure a list of hosts:
+Poiesis supports automatic failover across Proxmox cluster nodes. Configure a list of hosts:
 
 ```yaml
 proxmox:

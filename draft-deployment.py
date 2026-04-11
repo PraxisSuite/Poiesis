@@ -2,7 +2,7 @@
 """
 Draft Deployment File Builder
 ==============================
-Interactively builds a deployment JSON file for labinator without
+Interactively builds a deployment JSON file for Poiesis without
 actually deploying anything. The resulting file can be used with:
 
   python3 deploy_lxc.py --deploy-file deployments/lxc/<hostname>.json
@@ -674,7 +674,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         prog="draft-deployment.py",
-        description="Interactively build a labinator deployment JSON file without deploying.",
+        description="Interactively build a Poiesis deployment JSON file without deploying.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:
@@ -719,7 +719,7 @@ def main() -> None:
     console.print()
     console.print(Panel.fit(
         Text("Draft Deployment Builder\n", style="bold cyan", justify="center") +
-        Text("github.com: Jerry-Lees/HomeLab/labinator", style="dim cyan", justify="center"),
+        Text("github.com: PraxisSuite/Poiesis", style="dim cyan", justify="center"),
         border_style="cyan",
     ))
     console.print()

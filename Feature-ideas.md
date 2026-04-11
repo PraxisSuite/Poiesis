@@ -62,7 +62,7 @@ package_profiles:
 ### How it works
 
 - Proxmox firewall operates at three levels: datacenter, node, and VM/LXC instance.
-- Labinator adds rules at the **VM/LXC level** via:
+- Poiesis adds rules at the **VM/LXC level** via:
   - `POST /nodes/{node}/qemu/{vmid}/firewall/rules` (VMs)
   - `POST /nodes/{node}/lxc/{vmid}/firewall/rules` (LXC)
 - The VM firewall must also be **enabled** (`PUT .../firewall/options` with `enable: 1`).
@@ -88,8 +88,8 @@ package_profiles:
 ## Proxmox Cluster Import / Scan (`import.py`)
 
 **Scope: the entire cluster, no tag filter.** This is for adopting an existing Proxmox
-environment into labinator — every VM and LXC on every node, regardless of tags or
-whether labinator originally deployed them.
+environment into Poiesis — every VM and LXC on every node, regardless of tags or
+whether Poiesis originally deployed them.
 
 The goal is a deployment JSON file for every resource so the cluster can be documented,
 migrated, or rebuilt from scratch. Fields that can't be determined automatically (e.g.
@@ -211,24 +211,24 @@ DNS and Ansible inventory pattern.
 
 ---
 
-## Lab-Documenter Sync
+## Theoria Sync
 
-After deploy or decommission, trigger a lab-documenter update so the wiki and `services.json`
+After deploy or decommission, trigger a Theoria update so the wiki and `services.json`
 stay current without manual intervention.
 
 ### Implementation notes
 
 - After a successful deploy, append a minimal entry to `services.json` (hostname, IP, type,
-  deployed_at) on the lab-documenter host, then re-run the documenter to regenerate wiki pages.
+  deployed_at) on the Theoria host, then re-run the documenter to regenerate wiki pages.
 - On decomm, remove the entry and re-run.
 - Implementation options (in order of preference):
   1. SSH to the dev/documenter server and run the documenter script directly.
   2. Invoke a webhook or CI job that pulls and re-runs the documenter.
 - Config keys under a new `lab_documenter:` block in `config.yaml`:
   - `enabled: true/false`
-  - `server:` (host running lab-documenter)
+  - `server:` (host running Theoria)
   - `ssh_user:`
-  - `script_path:` (full path to the lab-documenter entry point)
+  - `script_path:` (full path to the Theoria entry point)
   - `services_json_path:` (full path to `services.json` on the remote host)
 
 ---
@@ -240,7 +240,7 @@ plaintext in the deployment JSON. On decommission, delete the secret.
 
 ### Deploy: Store credentials in Vault
 
-- Write to a KV-v2 path such as `secret/labinator/<hostname>` with fields `root_password` and
+- Write to a KV-v2 path such as `secret/Poiesis/<hostname>` with fields `root_password` and
   `admin_password`.
 - Optionally redact the password from the deployment JSON after writing (replace with
   `"password": "vault:<path>"`).
@@ -257,7 +257,7 @@ plaintext in the deployment JSON. On decommission, delete the secret.
   - `url:` (e.g. `https://vault.example.com`)
   - `token:` (Vault token — consider also supporting AppRole auth)
   - `kv_mount:` (KV-v2 mount point, e.g. `secret`)
-  - `path_prefix:` (e.g. `labinator` — secrets stored at `<mount>/<prefix>/<hostname>`)
+  - `path_prefix:` (e.g. `Poiesis` — secrets stored at `<mount>/<prefix>/<hostname>`)
 - Same opt-in pattern as other integrations — skip silently if disabled.
 
 ---
@@ -267,7 +267,7 @@ plaintext in the deployment JSON. On decommission, delete the secret.
 After a container or VM is deployed, automatically add a monitor in Uptime Kuma. Remove it on
 decommission.
 
-**Live test target available:** `kuma.lees-family.io` (deployed via labinator, running Uptime Kuma 2.2.1).
+**Live test target available:** `kuma.lees-family.io` (deployed via Poiesis, running Uptime Kuma 2.2.1).
 
 ### Deploy: Create monitor
 
@@ -339,7 +339,7 @@ Add `uptime-kuma-api` to `requirements.txt` if using this approach.
 - Config keys under a new `uptime_kuma:` block in `config.yaml`:
   - `enabled: true/false`
   - `url:` (e.g. `http://kuma.lees-family.io:3001`)
-  - `api_key:` (generated in Kuma Settings → API Keys — stored in `labinator/kuma` file)
+  - `api_key:` (generated in Kuma Settings → API Keys — stored in `Poiesis/kuma` file)
   - `default_monitor_type:` (`ping` or `port` — `ping` is a good default for all hosts)
   - `default_port:` (port to check when type is `port`, default: `22`)
   - `notification_id:` (optional — attach an existing Kuma notification channel ID)
@@ -351,14 +351,14 @@ Add `uptime-kuma-api` to `requirements.txt` if using this approach.
 
 ### Default monitors to create per host
 
-- **Ping** — every labinator-managed host (universal)
-- **TCP port 22** — every host (labinator bootstraps SSH on all LXC and VM deployments)
+- **Ping** — every Poiesis-managed host (universal)
+- **TCP port 22** — every host (Poiesis bootstraps SSH on all LXC and VM deployments)
 - **Profile-aware extras** (based on `package_profile` in the deployment JSON):
   - `web-server` profile → HTTP port 80, HTTPS port 443
   - `database` profile → TCP port 3306 (MySQL/MariaDB) or 5432 (Postgres)
   - `dns` profile → TCP port 53
 
-### Infrastructure monitors (one-time manual setup, outside labinator scope)
+### Infrastructure monitors (one-time manual setup, outside Poiesis scope)
 
 These are not per-host but should exist in Kuma for full coverage:
 - Proxmox web UI — HTTPS port 8006 on each node
@@ -432,7 +432,7 @@ remove it — the same pattern as the Cacti integration.
 
 ## REST API (FastAPI)
 
-Wrap labinator's core logic in a REST API server so deployments and decommissions can be
+Wrap Poiesis's core logic in a REST API server so deployments and decommissions can be
 triggered programmatically — from a web UI, CI/CD pipeline, or any HTTP client — without
 needing shell access to the controller machine.
 
@@ -487,7 +487,7 @@ python3 deploy.py "give me a small Ubuntu VM on proxmox02 for the wiki"
 
 ### How it works
 
-1. The description is sent to the Claude API with the labinator deployment JSON schema
+1. The description is sent to the Claude API with the Poiesis deployment JSON schema
    as context.
 2. Claude returns a populated deployment JSON (hostname suggestion, OS image, CPU, RAM,
    disk, VLAN, node preference if mentioned).
@@ -545,12 +545,12 @@ rich table showing every managed host at a glance.
 ### Anomaly detection
 
 - **Orphaned VM/LXC** — running in Proxmox but no deployment JSON found. Printed in yellow
-  as a warning row. Suggests a host deployed outside of labinator, or a deployment file
+  as a warning row. Suggests a host deployed outside of Poiesis, or a deployment file
   that was deleted.
 - **Ghost file** — deployment JSON exists but the VMID is not present in Proxmox. Printed
   in red. Suggests the VM/LXC was manually destroyed without running decomm.
 - **Node mismatch** — deployment JSON says `proxmox02` but Proxmox reports it on `proxmox03`.
-  Suggests a live migration happened outside of labinator.
+  Suggests a live migration happened outside of Poiesis.
 
 ### Implementation notes
 
@@ -713,7 +713,7 @@ Supports `--lxc` / `--vm` flags, `--deploy-file` to edit an existing draft, `--t
 ## Post-Deploy Hook Scripts — Plugins and Extensibility
 
 After a successful deployment (or decommission), run user-defined scripts or Ansible
-playbooks automatically. This is the plugin/extensibility mechanism that keeps labinator
+playbooks automatically. This is the plugin/extensibility mechanism that keeps Poiesis
 from needing a built-in integration for every possible tool.
 
 ### Usage
@@ -743,14 +743,14 @@ Each hook is called as a subprocess with a standard set of environment variables
 has everything it needs without parsing config files:
 
 ```bash
-LABINATOR_HOSTNAME=myserver
-LABINATOR_FQDN=myserver.lees-family.io
-LABINATOR_IP=10.20.20.150
-LABINATOR_NODE=proxmox02
-LABINATOR_VMID=142
-LABINATOR_TYPE=lxc          # or "vm"
-LABINATOR_ACTION=deploy     # or "decomm"
-LABINATOR_DEPLOY_FILE=/home/dad/projects/HomeLab/labinator/deployments/lxc/myserver.json
+POIESIS_HOSTNAME=myserver
+POIESIS_FQDN=myserver.lees-family.io
+POIESIS_IP=10.20.20.150
+POIESIS_NODE=proxmox02
+POIESIS_VMID=142
+POIESIS_TYPE=lxc          # or "vm"
+POIESIS_ACTION=deploy     # or "decomm"
+POIESIS_DEPLOY_FILE=/home/dad/projects/Poiesis/deployments/lxc/myserver.json
 ```
 
 ### Behavior
@@ -884,7 +884,7 @@ archive → reboot → running.
 
 This approach sidesteps the two bad alternatives:
 - **Community helper scripts** — run on the Proxmox host, create their own container,
-  can't cleanly integrate with labinator's infra pipeline, and depend on an external URL
+  can't cleanly integrate with Poiesis's infra pipeline, and depend on an external URL
   that can change or disappear.
 - **Full Ansible roles per app** — high maintenance burden; you own the install logic forever.
 
@@ -892,20 +892,20 @@ The archive approach lets the admin do the hard work once, then captures the res
 
 ### How archives are built
 
-The `.tar.gz` deployment archives are built using **porter**, which is functional and
-producing archives. Porter generates a `manifest.yaml` inside each archive documenting
+The `.tar.gz` deployment archives are built using **Poreia**, which is functional and
+producing archives. Poreia generates a `manifest.yaml` inside each archive documenting
 the source OS, local users, active systemd services, installed packages, and per-file
-SHA-256 checksums. Labinator reads this manifest to drive the post-extract workflow.
+SHA-256 checksums. Poiesis reads this manifest to drive the post-extract workflow.
 
-**Manifest spec:** `docs/specs/porter-snapshot-manifest.md` — full schema, archive layout,
-labinator integration steps, and caveats. Read this before implementing.
+**Manifest spec:** `docs/specs/poreia-snapshot-manifest.md` — full schema, archive layout,
+Poiesis integration steps, and caveats. Read this before implementing.
 
 ### Archive storage
 
-Archives live in `labinator/app-templates/`:
+Archives live in `Poiesis/app-templates/`:
 
 ```
-labinator/
+Poiesis/
 └── app-templates/
     ├── pihole.tar.gz
     ├── pihole-manifest.yaml
@@ -924,7 +924,7 @@ apps:
       cpus: 1
       memory_gb: 1
       disk_gb: 8
-    profile: monitoring-node       # labinator package profile to apply first
+    profile: monitoring-node       # Poiesis package profile to apply first
     extra_packages:
       - pihole
     lxc_features: []
@@ -949,7 +949,7 @@ apps:
 When an app profile is selected during `deploy_lxc.py`:
 
 1. Pre-fill CPU/RAM/disk from `recommended` values (user can override)
-2. Apply the referenced labinator package profile (installs baseline + profile packages)
+2. Apply the referenced Poiesis package profile (installs baseline + profile packages)
 3. Install any `extra_packages`
 4. Apply `lxc_features` from the catalog entry
 5. Read the manifest — create any custom users/groups listed
@@ -960,9 +960,9 @@ When an app profile is selected during `deploy_lxc.py`:
 
 ### Permissions and ownership
 
-`tar` preserves chmod bits and numeric uid/gid. Since labinator installs packages before
+`tar` preserves chmod bits and numeric uid/gid. Since Poiesis installs packages before
 extracting (step 2 above), system users created by packages already exist with the correct
-uid/gid by the time the archive lands. Custom users are handled via the porter-generated
+uid/gid by the time the archive lands. Custom users are handled via the Poreia-generated
 manifest (step 5). For edge cases, `post_extract_commands` in the manifest can run
 targeted `chown` fixes.
 
@@ -1035,7 +1035,7 @@ parallel.
 Two related capabilities in one script:
 
 1. **Jump** — after any successful deploy, offer to drop directly into an SSH session on the new host. The IP is already known at the end of the deploy flow, so no lookup is needed.
-2. **Standalone** — `python3 ssh.py <hostname>` looks up the deployment JSON by hostname, resolves the IP (`assigned_ip` → `ip_address`), and execs SSH. Works like a smarter alias for any labinator-managed host.
+2. **Standalone** — `python3 ssh.py <hostname>` looks up the deployment JSON by hostname, resolves the IP (`assigned_ip` → `ip_address`), and execs SSH. Works like a smarter alias for any Poiesis-managed host.
 3. **`~/.ssh/config` updater** — optionally write (or update) a `Host` entry in `~/.ssh/config` so you can `ssh myserver` directly from anywhere.
 
 ### Usage
@@ -1139,7 +1139,7 @@ python3 health.py --down-only       # only print hosts that are down or unreacha
 
 ## rerun-ansible.py — Re-run Post-Deploy Ansible Playbook
 
-Re-runs the labinator Ansible post-deploy playbook against an already-running host without touching Proxmox at all. Use it to push updated SNMP config, install additional packages, rotate NTP servers, or apply any other change the playbook manages.
+Re-runs the Poiesis Ansible post-deploy playbook against an already-running host without touching Proxmox at all. Use it to push updated SNMP config, install additional packages, rotate NTP servers, or apply any other change the playbook manages.
 
 ### Usage
 

@@ -1,5 +1,5 @@
 """
-labinator.deploy — Deploy-time helpers: health check and SSH wait.
+Poiesis.deploy — Deploy-time helpers: health check and SSH wait.
 """
 
 import socket

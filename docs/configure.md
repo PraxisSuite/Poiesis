@@ -50,11 +50,11 @@ If a `config.yaml` already exists, the wizard won't silently overwrite it. Inste
 
 ```
 ╭──────────────────────────────────────────────╮
-│           Labinator Config Wizard            │
+│           Poiesis Config Wizard            │
 │ Build or edit your config.yaml interactively │
 ╰──────────────────────────────────────────────╯
 
-An existing config.yaml was found at /home/user/labinator/config.yaml.
+An existing config.yaml was found at /home/user/Poiesis/config.yaml.
 ? What would you like to do?
  » Edit existing config (pre-fill prompts)
    Start fresh (overwrite existing)
@@ -83,7 +83,7 @@ The wizard walks through every section in order. Each field shows a one-sentence
 After all sections complete, the wizard writes the file and immediately runs validation:
 
 ```
-  ✓ Written: /home/user/labinator/config.yaml
+  ✓ Written: /home/user/Poiesis/config.yaml
 
 ╭──────────────────────────── ✓  Config Valid ─────────────────────────────╮
 │ All required fields present and valid.                                   │
@@ -173,7 +173,7 @@ The standard profiles cover:
 | `web-server` | nginx, certbot, python3-certbot-nginx, ufw | WWW |
 | `database` | mariadb-server, mariadb-client | DB, MariaDB |
 | `docker-host` | docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin | Docker |
-| `monitoring-node` | prometheus-node-exporter, snmpd | Monitoring |
+| `monitoring-node` | prometheus-node-exPoreia, snmpd | Monitoring |
 | `dev-tools` | git, vim, tmux, make, python3-pip | Dev |
 | `nfs-server` | nfs-kernel-server, nfs-common | NFS, Storage |
 

@@ -1,10 +1,10 @@
 [← Back to README](../../README.md)
 
-# Labinator — Architecture Overview
+# Poiesis — Architecture Overview
 
 ### About
 
-Labinator is a command-line tool for deploying and managing LXC containers and QEMU VMs
+Poiesis is a command-line tool for deploying and managing LXC containers and QEMU VMs
 in a Proxmox VE homelab cluster. It handles the full lifecycle: creation, post-deploy
 configuration, DNS registration, inventory registration, TTL-based expiry, and
 decommission.
@@ -76,7 +76,7 @@ the decomm flow is automatically inherited by all four consumers.
 ## External Systems
 
 ```
-labinator (local machine)
+Poiesis (local machine)
     │
     ├──── Proxmox API (:8006) ─────────── create/destroy VMs and LXC
     │
@@ -98,7 +98,7 @@ post-deploy playbook.
 ## Deployment Files as State
 
 Deployment JSON files in `deployments/lxc/` and `deployments/vms/` are the only
-persistent state labinator maintains. There is no database.
+persistent state Poiesis maintains. There is no database.
 
 - Deploy scripts write the file at completion.
 - Decomm scripts read the file to drive cleanup. Optionally delete it with `--purge`.
@@ -110,7 +110,7 @@ persistent state labinator maintains. There is no database.
 
 ## Tagging Convention
 
-Every resource deployed by labinator is tagged `auto-deploy` in Proxmox. Additional tags
+Every resource deployed by Poiesis is tagged `auto-deploy` in Proxmox. Additional tags
 come from the selected package profile (e.g. `WWW`, `DB`, `Docker`).
 
 The `auto-deploy` tag is what `cleanup_tagged.py` uses to find managed resources. If
@@ -155,7 +155,7 @@ provider dispatch logic in the deploy/decomm scripts.
 - `docs/specs/cloud-images.md` — `cloud-images.yaml` catalog format
 - `docs/integrations/ansible.md` — Ansible post-deploy and inventory integration
 - `docs/integrations/bind-dns.md` — BIND DNS registration and removal
-- `docs/specs/porter-snapshot-manifest.md` — porter archive manifest spec (future integration)
+- `docs/specs/poreia-snapshot-manifest.md` — Poreia archive manifest spec (future integration)
 
 ---
 

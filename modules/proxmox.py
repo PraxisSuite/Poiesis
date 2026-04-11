@@ -1,5 +1,5 @@
 """
-labinator.proxmox — Proxmox API helpers.
+Poiesis.proxmox — Proxmox API helpers.
 """
 
 import base64

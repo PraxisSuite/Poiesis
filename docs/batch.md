@@ -97,7 +97,7 @@ python3 deploy.py --batch-dir deployments/lxc/ --validate
 
 ```
 ╭──────────────────────────╮
-│ Labinator Batch Validate │
+│ Poiesis Batch Validate │
 ╰──────────────────────────╯
 
 ✓ config.yaml  OK

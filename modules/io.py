@@ -1,5 +1,5 @@
 """
-labinator.io — File I/O helpers: deployment files, history log, argparse, dry-run banners.
+Poiesis.io — File I/O helpers: deployment files, history log, argparse, dry-run banners.
 """
 
 import argparse
@@ -109,7 +109,7 @@ def print_dry_run_header(kind: str) -> None:
     label = "LXC Deploy" if kind == "lxc" else "VM Deploy"
     console.print()
     console.print(Panel.fit(
-        Text(f"Labinator Dry Run — {label}", style="bold yellow"),
+        Text(f"Poiesis Dry Run — {label}", style="bold yellow"),
         border_style="yellow",
     ))
     console.print()

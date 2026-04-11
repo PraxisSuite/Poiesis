@@ -1,4 +1,4 @@
-# labinator
+# Poiesis
 
 A command-line wizard for provisioning, configuring, and onboarding LXC containers and QEMU virtual machines in a Proxmox VE homelab cluster. Handles the full lifecycle from resource creation through post-deployment configuration, DNS registration, Ansible inventory registration, TTL-based auto-expiry, and batch cleanup — all from a single guided session or a pre-built deployment file. Companion decommission scripts reverse the process cleanly.
 
@@ -21,7 +21,7 @@ A command-line wizard for provisioning, configuring, and onboarding LXC containe
 
 ## What It Does
 
-labinator manages the complete lifecycle of Proxmox resources across eight scripts:
+Poiesis manages the complete lifecycle of Proxmox resources across eight scripts:
 
 - **`configure.py`** — interactive wizard to build or edit `config.yaml` with per-field hints, autocomplete timezone picker, and immediate validation
 - **`deploy_lxc.py`** — interactive wizard to fully provision and onboard an LXC container (create, bootstrap SSH, run Ansible, register DNS and inventory); supports both DHCP and static IP addressing; writes a full deployment log to `logs/last-deployment.log`
@@ -39,7 +39,7 @@ labinator manages the complete lifecycle of Proxmox resources across eight scrip
 ## Project Layout
 
 ```
-labinator/
+Poiesis/
 ├── configure.py                   # Interactive config.yaml wizard (build, edit, validate)
 ├── deploy_lxc.py                  # LXC provisioning wizard
 ├── decomm_lxc.py                  # LXC decommission script
@@ -194,8 +194,8 @@ myserver ansible_host=myserver.example.com ansible_python_interpreter=/usr/bin/p
 ## Installation
 
 ```bash
-git clone https://github.com/Jerry-Lees/HomeLab.git
-cd HomeLab/labinator
+git clone https://github.com/PraxisSuite/Poiesis.git
+cd Poiesis
 ./setup.sh
 ```
 
@@ -294,7 +294,7 @@ python3 decomm.py --batch-dir deployments/lxc/
 **Open a GitHub Issue with the following:**
 
 ```
-## Issue Report — labinator
+## Issue Report — Poiesis
 
 ### Summary
 <!-- One sentence describing what went wrong -->
@@ -307,7 +307,7 @@ python3 decomm.py --batch-dir deployments/lxc/
 | Ansible version | ansible --version |
 | proxmoxer version | pip show proxmoxer |
 | Proxmox VE version | shown in Proxmox UI top-right |
-| labinator version / commit | git rev-parse --short HEAD |
+| Poiesis version / commit | git rev-parse --short HEAD |
 
 ### Which script and step failed?
 **Batch:**

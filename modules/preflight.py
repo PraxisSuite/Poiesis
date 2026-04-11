@@ -1,5 +1,5 @@
 """
-labinator.preflight — Preflight connectivity and dependency checks.
+Poiesis.preflight — Preflight connectivity and dependency checks.
 """
 
 import os

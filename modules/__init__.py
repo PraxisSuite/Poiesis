@@ -1,1 +1,1 @@
-# labinator shared library package
+# Poiesis shared library package

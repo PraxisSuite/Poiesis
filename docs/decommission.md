@@ -8,7 +8,7 @@
 
 These scripts are the counterpart to `deploy_lxc.py` and `deploy_vm.py`.
 
-> **Note:** By design, and for safety, only resources that were deployed with a labinator deploy script (and have a corresponding deployment JSON file) can be decommissioned this way.
+> **Note:** By design, and for safety, only resources that were deployed with a Poiesis deploy script (and have a corresponding deployment JSON file) can be decommissioned this way.
 
 > **Warning!!!** Keep in mind that **This is irreversible.** Both scripts require a confirmation challenge before proceeding. Use `--silent` only in automated pipelines where you are certain of what you are destroying.
 
@@ -219,7 +219,7 @@ The log is overwritten on each run and is excluded from git.
 The path is printed at the end of every decommission:
 
 ```
-Log: /home/dad/projects/HomeLab/labinator/logs/last-decomm.log
+Log: /home/dad/projects/Poiesis/logs/last-decomm.log
 ```
 
 > **Note:** `--silent` mode (used by `decomm.py` batch) does not write to `last-decomm.log` directly. `decomm.py` captures subprocess output and writes the combined log itself at the end of the batch run.

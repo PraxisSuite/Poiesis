@@ -45,7 +45,7 @@ A JSON array of objects. Each object represents one resource to act on.
 |---|---|
 | `keep` | Leave the resource running. No changes made. Shown in summary as kept. |
 | `decomm` | Fully decommission: stop and destroy the Proxmox resource, remove DNS records, remove from Ansible inventory. Same pipeline as `decomm_lxc.py` / `decomm_vm.py`. |
-| `promote` | Remove the `auto-deploy` tag from the resource in Proxmox. The resource continues running and is no longer managed by labinator cleanup. Use when a temporary resource becomes permanent. |
+| `promote` | Remove the `auto-deploy` tag from the resource in Proxmox. The resource continues running and is no longer managed by Poiesis cleanup. Use when a temporary resource becomes permanent. |
 
 ---
 

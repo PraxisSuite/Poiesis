@@ -2,13 +2,13 @@
 # About This Document
 ---
 
-This file tracks known bugs and issues in labinator. It serves as both an open task list
+This file tracks known bugs and issues in Poiesis. It serves as both an open task list
 and a historical record of what broke and how it was fixed.
 
 **This is not a replacement for GitHub Issues.** Bugs here are either found by people
 actively developing the tools, or are issues that were opened on GitHub and accepted for
 work. For user-reported bugs or feature requests, open an issue at:
-https://github.com/Jerry-Lees/HomeLab/issues
+https://github.com/PraxisSuite/Poiesis/issues
 
 **Conventions:**
 - Bug IDs are sequential and never reused. Next ID: **BUG-003**.

@@ -40,7 +40,7 @@ if not any(a in sys.argv for a in _SKIP_LOG):
             self._stream = stream
             self._file   = open(path, "w")
             self._file.write(
-                f"Labinator LXC Deploy — {_dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"Poiesis LXC Deploy — {_dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                 f"Command: {' '.join(sys.argv)}\n\n"
             )
         def write(self, data):
@@ -366,7 +366,7 @@ def main() -> None:
     console.print()
     console.print(Panel.fit(
         Text("Proxmox LXC Deploy Wizard\n", style="bold cyan", justify="center") +
-        Text("github.com: Jerry-Lees/HomeLab/labinator", style="dim cyan", justify="center"),
+        Text("github.com: PraxisSuite/Poiesis", style="dim cyan", justify="center"),
         border_style="cyan",
     ))
     console.print()

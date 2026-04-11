@@ -272,7 +272,7 @@ In `--silent` mode, the download flow is not available — `--silent` mode requi
 
 The Proxmox catalog includes many **pre-configured appliance templates** — most notably the TurnKey Linux family (e.g. `TurnKey Ansible`, `TurnKey DokuWiki`, `TurnKey BookStack`). These ship with full application stacks already installed and running.
 
-> **Warning:** Appliance templates — TurnKey and possibly others — are **not compatible** with the labinator Ansible post-deploy playbook. They use custom initialization frameworks and non-standard configurations that conflict with the baseline setup steps (package install, user creation, NTP, SNMP). Deploying an appliance template will succeed through Steps 1–4 but **Ansible (Step 5) will fail**.
+> **Warning:** Appliance templates — TurnKey and possibly others — are **not compatible** with the Poiesis Ansible post-deploy playbook. They use custom initialization frameworks and non-standard configurations that conflict with the baseline setup steps (package install, user creation, NTP, SNMP). Deploying an appliance template will succeed through Steps 1–4 but **Ansible (Step 5) will fail**.
 >
 > Use appliance templates only if you plan to disable Ansible post-deploy (`ansible.enabled: false` in `config.yaml`) or manage configuration entirely manually after deployment.
 
@@ -280,7 +280,7 @@ The Proxmox catalog includes many **pre-configured appliance templates** — mos
 
 ## Static IP Deployment
 
-By default, LXC containers use DHCP — the IP is assigned by your network's DHCP server at boot and discovered by labinator via the Proxmox API. Static IP addressing is also supported when you need a predictable, fixed address.
+By default, LXC containers use DHCP — the IP is assigned by your network's DHCP server at boot and discovered by Poiesis via the Proxmox API. Static IP addressing is also supported when you need a predictable, fixed address.
 
 **At the IP address prompt**, enter a static IP address instead of leaving it blank:
 
@@ -554,7 +554,7 @@ The log is overwritten on each run. It is excluded from git via `.gitignore`.
 The path to the log is printed at the end of every deployment:
 
 ```
-Log: /home/dad/projects/HomeLab/labinator/logs/last-deployment.log
+Log: /home/dad/projects/Poiesis/logs/last-deployment.log
 ```
 
 > **Note:** `--silent` mode (used by batch deploy) does not write to `last-deployment.log` directly. `deploy.py` captures subprocess output and writes it to `last-deployment.log` itself at the end of the batch run.

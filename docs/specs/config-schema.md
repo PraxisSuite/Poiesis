@@ -4,7 +4,7 @@
 
 ### About
 
-`config.yaml` is the primary configuration file for labinator. It controls how labinator
+`config.yaml` is the primary configuration file for Poiesis. It controls how Poiesis
 connects to your Proxmox cluster, what defaults are used during deployment, and how
 external integrations (DNS, Ansible inventory, SNMP, NTP) behave.
 
@@ -174,14 +174,14 @@ dns:
 |---|---|---|---|
 | `enabled` | optional | bool | Enable DNS registration. Default: `true`. Set `false` to manage DNS manually. |
 | `provider` | optional | string | DNS backend. Currently only `bind` is implemented. Future: `powerdns`, `technitium`. |
-| `server` | ✓ if enabled | string | IP address of the DNS server. Labinator SSHes to this host to add/remove records. |
+| `server` | ✓ if enabled | string | IP address of the DNS server. Poiesis SSHes to this host to add/remove records. |
 | `ssh_user` | optional | string | SSH user for DNS server access. Default: `root`. |
 | `forward_zone_file` | ✓ if enabled | path | Full path to the BIND forward zone file on the DNS server. |
 
 **Note:** Reverse (PTR) zone files are derived automatically from the deployed IP address.
 If the reverse zone file does not exist on the BIND server, PTR registration is skipped
 with a warning — this is expected if reverse zones haven't been configured. It is not a
-labinator error.
+Poiesis error.
 
 ---
 

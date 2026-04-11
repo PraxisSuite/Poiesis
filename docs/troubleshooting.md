@@ -118,7 +118,7 @@ ssh-copy-id -i ~/.ssh/id_rsa root@proxmox03.example.com
 
 **Symptom:** After container creation, you see a yellow warning: `⚠ Could not apply feature flags via SSH: ...` and the flags are not visible in Proxmox.
 
-**Cause:** Feature flags other than `nesting=1` cannot be set via Proxmox API tokens — the API returns `403 Forbidden`. labinator applies them via `pct set` over SSH instead, using the same key configured in `proxmox.ssh_key`. If SSH to the node fails after the container is created, the flags are skipped with a warning (non-fatal — the container is still deployed).
+**Cause:** Feature flags other than `nesting=1` cannot be set via Proxmox API tokens — the API returns `403 Forbidden`. Poiesis applies them via `pct set` over SSH instead, using the same key configured in `proxmox.ssh_key`. If SSH to the node fails after the container is created, the flags are skipped with a warning (non-fatal — the container is still deployed).
 
 **Fix:** Verify SSH works to the target node:
 ```bash
@@ -173,7 +173,7 @@ The script prompts for a password retry on the first failure.
 
 - Check the VM console in the Proxmox web UI — cloud-init errors appear on the serial console
 - Confirm the cloud image was imported correctly (VM should have a scsi0 disk in the Proxmox UI)
-- For DHCP: confirm `qemu-guest-agent` is installed and running. Ubuntu 24.04 cloud images do not ship it by default — labinator installs it via a cloud-init vendor-data snippet at deploy time. Rocky Linux 8 and openSUSE Leap 15.6 also require this snippet. If you're using a custom image that does not support vendor-data, you may need to install qemu-guest-agent manually or use a static IP instead.
+- For DHCP: confirm `qemu-guest-agent` is installed and running. Ubuntu 24.04 cloud images do not ship it by default — Poiesis installs it via a cloud-init vendor-data snippet at deploy time. Rocky Linux 8 and openSUSE Leap 15.6 also require this snippet. If you're using a custom image that does not support vendor-data, you may need to install qemu-guest-agent manually or use a static IP instead.
 - For static: confirm the IP and gateway are reachable on the VLAN
 
 ---
@@ -184,7 +184,7 @@ The script prompts for a password retry on the first failure.
 
 **Cause:** A bug in cloud-init 23.4 causes `cloud-init status --wait` to call `systemctl show-environment`, which fails over SSH.
 
-**Status: Fixed.** labinator does not use `cloud-init status --wait`. Instead, it waits for `/run/cloud-init/result.json` to appear, which is written by cloud-init when all first-boot stages complete and works reliably across all supported OS families.
+**Status: Fixed.** Poiesis does not use `cloud-init status --wait`. Instead, it waits for `/run/cloud-init/result.json` to appear, which is written by cloud-init when all first-boot stages complete and works reliably across all supported OS families.
 
 ---
 
@@ -212,7 +212,7 @@ The script prompts for a password retry on the first failure.
 
 **Cause:** The PTR step is skipped when the reverse zone file does not exist on the BIND server. This is graceful expected behavior — the A record is still registered.
 
-**Fix:** Create the reverse zone file(s) on your BIND server for each subnet in use (e.g. `/var/lib/bind/20.20.10.in-addr.arpa.hosts` for the `10.20.20.x` subnet). This is a DNS infrastructure gap, not a labinator bug.
+**Fix:** Create the reverse zone file(s) on your BIND server for each subnet in use (e.g. `/var/lib/bind/20.20.10.in-addr.arpa.hosts` for the `10.20.20.x` subnet). This is a DNS infrastructure gap, not a Poiesis bug.
 
 ---
 

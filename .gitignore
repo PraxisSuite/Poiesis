@@ -34,3 +34,8 @@ deployments/lxc/*.json
 deployments/vms/*.json
 !deployments/lxc/example-*.json
 !deployments/vms/example-*.json
+CLAUDE.md
+
+# Claude Code
+CLAUDE.md
+.claude/

@@ -4,7 +4,7 @@
 
 ### About
 
-`draft-deployment.py` is an interactive wizard that builds a labinator deployment JSON file without actually deploying anything. It runs the same wizard prompts as `deploy_lxc.py` and `deploy_vm.py` — node selection, template or cloud image browsing, storage, IP addressing, package profiles, LXC features, and TTL — and saves the result to `deployments/lxc/<hostname>.json` or `deployments/vms/<hostname>.json`.
+`draft-deployment.py` is an interactive wizard that builds a Poiesis deployment JSON file without actually deploying anything. It runs the same wizard prompts as `deploy_lxc.py` and `deploy_vm.py` — node selection, template or cloud image browsing, storage, IP addressing, package profiles, LXC features, and TTL — and saves the result to `deployments/lxc/<hostname>.json` or `deployments/vms/<hostname>.json`.
 
 Use it to:
 - Plan a deployment before committing to it

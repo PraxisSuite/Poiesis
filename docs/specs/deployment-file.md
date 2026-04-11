@@ -9,7 +9,7 @@ Deployment files are JSON records written to `deployments/lxc/` (LXC containers)
 authoritative record of what was deployed, where, and how — and are the primary input for
 decommission, expiry, renewal, and re-deploy operations.
 
-**Why they matter:** Without a deployment file, labinator has no record of a resource.
+**Why they matter:** Without a deployment file, Poiesis has no record of a resource.
 Decommission scripts read the file to know which node to contact, what VMID to destroy,
 which IP to clean from DNS, and which hostname to remove from inventory. `expire.py` scans
 these files for `expires_at` to manage TTLs. Pre-building a deployment file and passing it

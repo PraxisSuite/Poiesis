@@ -1,5 +1,5 @@
 """
-labinator.ui — Interactive wizard helpers: prompts, back-navigation, confirmation.
+Poiesis.ui — Interactive wizard helpers: prompts, back-navigation, confirmation.
 """
 
 import random

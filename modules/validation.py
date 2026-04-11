@@ -1,5 +1,5 @@
 """
-labinator.validation — Config and deployment file validation.
+Poiesis.validation — Config and deployment file validation.
 """
 
 import argparse
@@ -151,7 +151,7 @@ def run_validate_common(args: argparse.Namespace, validate_fn) -> None:
 
     console.print()
     console.print(Panel.fit(
-        Text("Labinator Validate", style="bold yellow"),
+        Text("Poiesis Validate", style="bold yellow"),
         border_style="yellow",
     ))
     console.print()

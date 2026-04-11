@@ -245,7 +245,7 @@ grep '"action": "deploy"' deployments/history.log | python3 -c "import sys,json;
 
 ## Providers
 
-labinator uses a provider model for external integrations. Each provider is configured in `config.yaml` and can be enabled or disabled independently.
+Poiesis uses a provider model for external integrations. Each provider is configured in `config.yaml` and can be enabled or disabled independently.
 
 ### DNS provider (BIND)
 

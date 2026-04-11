@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Labinator Batch Decomm
+Poiesis Batch Decomm
 ======================
 Decommission multiple LXC containers and/or VMs from deployment JSON files.
 Reads the "type" field from each file ("lxc" or "vm") and calls the appropriate
@@ -248,7 +248,7 @@ def print_summary(results: list[dict], con: Console | None = None) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="decomm.py",
-        description="Labinator Batch Decomm — decommission multiple VMs/LXCs from JSON files",
+        description="Poiesis Batch Decomm — decommission multiple VMs/LXCs from JSON files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -289,7 +289,7 @@ def main() -> None:
         mode_label += f"  stagger {stagger}s"
     console.print()
     console.print(Panel.fit(
-        Text(f"Labinator Batch Decomm — {len(files)} file(s)  [{mode_label}]",
+        Text(f"Poiesis Batch Decomm — {len(files)} file(s)  [{mode_label}]",
              style="bold red", justify="center"),
         border_style="red",
     ))
@@ -385,7 +385,7 @@ def main() -> None:
     log_path = _LOG_DIR / "last-decomm.log"
     with open(log_path, "w") as lf:
         lc = Console(file=lf, highlight=False, width=120, no_color=True)
-        lc.print(f"Labinator Batch Decomm — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        lc.print(f"Poiesis Batch Decomm — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         lc.print(f"Command: {' '.join(sys.argv)}")
         lc.print()
         for r in [results[i] for i in range(total) if results[i] is not None]:

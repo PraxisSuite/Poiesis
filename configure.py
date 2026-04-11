@@ -2,7 +2,7 @@
 """
 Interactive Config File Wizard
 ===============================
-Guides you through building a config.yaml for labinator, section by section.
+Guides you through building a config.yaml for Poiesis, section by section.
 Pre-fills all prompts when editing an existing config.
 
   --edit                Edit an existing config.yaml (pre-fills all prompts)
@@ -55,7 +55,7 @@ _DEFAULT_PROFILES = {
         "tags": ["Docker"],
     },
     "monitoring-node": {
-        "packages": ["prometheus-node-exporter", "snmpd"],
+        "packages": ["prometheus-node-exPoreia", "snmpd"],
         "tags": ["Monitoring"],
     },
     "dev-tools": {
@@ -346,7 +346,7 @@ def prompt_dns(existing: dict) -> dict:
         return {"enabled": False, "provider": "bind", "server": "", "ssh_user": "root",
                 "forward_zone_file": ""}
 
-    _hint("IP of the BIND server labinator SSHes into to update zone files.")
+    _hint("IP of the BIND server Poiesis SSHes into to update zone files.")
     server = _ask("DNS server IP", existing.get("server", "10.0.0.10"))
 
     _hint("SSH user for the DNS server — needs write access to the zone file.")
@@ -388,7 +388,7 @@ def prompt_ansible_inventory(existing: dict) -> dict:
     _hint("Host that holds your Ansible inventory file.")
     server = _ask("Inventory server hostname/IP", existing.get("server", "dev.example.com"))
 
-    _hint("SSH user labinator uses to push inventory updates.")
+    _hint("SSH user Poiesis uses to push inventory updates.")
     user = _ask("SSH user for inventory server", existing.get("user", "root"))
 
     _hint("Full path to the inventory file on the remote server.")
@@ -828,13 +828,13 @@ def show_validation_results(cfg_path: Path) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    # Allow --? as an alias for --help, matching the rest of labinator's scripts
+    # Allow --? as an alias for --help, matching the rest of Poiesis's scripts
     if "--?" in sys.argv:
         sys.argv[sys.argv.index("--?")] = "--help"
 
     parser = argparse.ArgumentParser(
         prog="configure.py",
-        description="Interactive wizard for building and validating labinator config.yaml",
+        description="Interactive wizard for building and validating Poiesis config.yaml",
         epilog=(
             "Examples:\n"
             "  python3 configure.py                       # create config.yaml from scratch\n"
@@ -864,7 +864,7 @@ def main() -> None:
 
     console.print()
     console.print(Panel.fit(
-        Text("Labinator Config Wizard\nBuild or edit your config.yaml interactively",
+        Text("Poiesis Config Wizard\nBuild or edit your config.yaml interactively",
              style="bold cyan", justify="center"),
         border_style="cyan",
     ))

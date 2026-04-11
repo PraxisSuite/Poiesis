@@ -4,7 +4,7 @@
 
 ### About
 
-Labinator uses Ansible for two distinct purposes after a resource is deployed:
+Poiesis uses Ansible for two distinct purposes after a resource is deployed:
 
 1. **Post-deploy configuration** — configures the newly deployed host (users, packages, NTP, SNMP, timezone, SSH).
 2. **Inventory registration** — adds the host to the Ansible inventory on a remote server so it can be managed by future playbook runs.
@@ -17,7 +17,7 @@ Both are controlled by settings in `config.yaml` and can be independently disabl
 
 ### How it works
 
-After a container or VM is deployed and reachable via SSH, labinator runs an Ansible
+After a container or VM is deployed and reachable via SSH, Poiesis runs an Ansible
 playbook against the new host. The playbook is invoked directly via `ansible-playbook`
 on the local machine.
 
@@ -102,7 +102,7 @@ are controlled separately.
 
 ### How it works
 
-After post-deploy configuration, labinator SSHes to a designated inventory server and
+After post-deploy configuration, Poiesis SSHes to a designated inventory server and
 runs a second Ansible playbook (`ansible/update-inventory.yml`) to:
 
 1. Add the new host to `known_hosts` (by IP and FQDN).

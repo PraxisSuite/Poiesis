@@ -1,5 +1,5 @@
 """
-labinator shared library — compatibility shim
+Poiesis shared library — compatibility shim
 =============================================
 This file re-exports all public symbols from the split module files so that
 existing caller scripts (deploy_lxc.py, deploy_vm.py, decomm_lxc.py,

@@ -1,5 +1,5 @@
 """
-labinator.decomm — Decommission pipeline shared with cleanup_tagged and expire.
+Poiesis.decomm — Decommission pipeline shared with cleanup_tagged and expire.
 """
 
 import os

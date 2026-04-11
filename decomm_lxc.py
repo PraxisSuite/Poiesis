@@ -31,7 +31,7 @@ if not any(a in sys.argv for a in _SKIP_LOG):
             self._stream = stream
             self._file   = open(path, "w")
             self._file.write(
-                f"Labinator LXC Decomm — {_dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"Poiesis LXC Decomm — {_dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                 f"Command: {' '.join(sys.argv)}\n\n"
             )
         def write(self, data):

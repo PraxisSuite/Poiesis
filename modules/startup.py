@@ -1,5 +1,5 @@
 """
-labinator.startup — Config loading and early-startup checks.
+Poiesis.startup — Config loading and early-startup checks.
 """
 
 import subprocess

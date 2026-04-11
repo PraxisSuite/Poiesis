@@ -1,5 +1,5 @@
 """
-labinator.ansible — Ansible playbook runners for post-deploy and inventory management.
+Poiesis.ansible — Ansible playbook runners for post-deploy and inventory management.
 """
 
 import json

@@ -1,5 +1,5 @@
 """
-labinator.bind — DNS (BIND) Ansible integration helpers.
+Poiesis.bind — DNS (BIND) Ansible integration helpers.
 """
 
 import subprocess

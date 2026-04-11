@@ -1,5 +1,5 @@
 """
-labinator.profiles — Package profile resolution, LXC features, tag colors, TTL helpers.
+Poiesis.profiles — Package profile resolution, LXC features, tag colors, TTL helpers.
 """
 
 import re

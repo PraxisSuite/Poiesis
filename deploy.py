@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Labinator Batch Deploy
+Poiesis Batch Deploy
 ======================
 Deploy multiple LXC containers and/or VMs in parallel from deployment JSON files.
 Reads the "type" field from each file ("lxc" or "vm") and calls the appropriate
@@ -166,7 +166,7 @@ def _parse_status(line: str) -> str | None:
 def run_validate_all(files: list[Path], config_path: str | None) -> bool:
     console.print()
     console.print(Panel.fit(
-        Text("Labinator Batch Validate", style="bold", justify="center"),
+        Text("Poiesis Batch Validate", style="bold", justify="center"),
         border_style="dim",
     ))
     console.print()
@@ -361,7 +361,7 @@ def print_summary(results: list[dict], con: Console | None = None) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="deploy.py",
-        description="Labinator Batch Deploy — deploy multiple VMs/LXCs from JSON files",
+        description="Poiesis Batch Deploy — deploy multiple VMs/LXCs from JSON files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -418,7 +418,7 @@ def main() -> None:
         mode_label += f"  stagger {stagger}s"
     console.print()
     console.print(Panel.fit(
-        Text(f"Labinator Batch Deploy — {len(files)} file(s)  [{mode_label}]", style="bold", justify="center"),
+        Text(f"Poiesis Batch Deploy — {len(files)} file(s)  [{mode_label}]", style="bold", justify="center"),
         border_style="cyan",
     ))
 
@@ -516,7 +516,7 @@ def main() -> None:
     log_path = _LOG_DIR / "last-deployment.log"
     with open(log_path, "w") as lf:
         lc = Console(file=lf, highlight=False, width=120, no_color=True)
-        lc.print(f"Labinator Batch Deploy — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        lc.print(f"Poiesis Batch Deploy — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         lc.print(f"Command: {' '.join(sys.argv)}")
         lc.print()
         for r in [results[i] for i in range(total) if results[i] is not None]:
