@@ -1,5 +1,29 @@
 # Feature Ideas
 
+## Extra Tags in Deployment Files
+
+Add an `extra_tags` field to both LXC and VM deployment files to allow arbitrary Proxmox tags
+beyond those derived from `package_profile`. Useful for environment labels (`prod`, `staging`,
+`dev`), ownership, or any other cluster-wide classification.
+
+### Usage
+
+```json
+{
+  "extra_tags": ["prod", "radio"]
+}
+```
+
+### Implementation notes
+
+- `deploy_lxc.py` and `deploy_vm.py` read `extra_tags` from the deployment file (default `[]`).
+- Tags applied to the Proxmox resource become `auto-deploy` + profile tags + `extra_tags`.
+- `draft-deployment.py` should prompt for extra tags (optional, free-text, semicolon or
+  comma-separated input split into a list).
+- Document `extra_tags` in `docs/specs/deployment-file.md` for both LXC and VM schemas.
+
+---
+
 ## Resource Resize Script
 
 Add a `resize.py` (or `resize_lxc.py` / `resize_vm.py`) that modifies CPU, RAM, or disk on an
