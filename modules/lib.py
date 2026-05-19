@@ -52,6 +52,23 @@ from modules.validation import (
     check_vlan_exists,
     validate_lxc_deployment,
     validate_vm_deployment,
+    validate_bigip_deployment,
+    check_bridges_exist,
+)
+
+# ── bigip (BIG-IP appliance helpers) ─────────────────────────────────────────
+from modules.bigip import (
+    APPLIANCE_DIR,
+    find_appliance_images,
+    extract_qcow_zip,
+    resolve_qcow_for_deploy,
+    import_qcow_to_node,
+    build_nic_config,
+    attach_bigip_disk_and_nics,
+)
+from modules.bigip_firstboot import (
+    firstboot_configure,
+    revoke_license,
 )
 
 # ── proxmox ──────────────────────────────────────────────────────────────────
@@ -103,6 +120,7 @@ from modules.bind import (
 from modules.ansible import (
     run_ansible_post_deploy,
     run_ansible_inventory_update,
+    run_ansible_inventory_update_bigip,
     remove_from_inventory,
 )
 

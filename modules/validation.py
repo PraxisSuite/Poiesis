@@ -277,6 +277,25 @@ def check_vlan_exists(proxmox, node: str, bridge: str, vlan: int | str,
         sys.exit(0)
 
 
+def check_bridges_exist(proxmox, node: str, bridges: list[str]) -> list[str]:
+    """Return a list of bridge names from `bridges` that do NOT exist on `node`.
+
+    Used as a fail-fast preflight: the caller should abort if anything is returned.
+    On API failure the check is skipped (returns empty list) — we don't want a transient
+    Proxmox blip to block a deploy.
+    """
+    try:
+        interfaces = proxmox.nodes(node).network.get()
+    except Exception:
+        return []
+    bridge_names = {
+        i.get("iface", "")
+        for i in interfaces
+        if i.get("type") == "bridge"
+    }
+    return [b for b in bridges if b not in bridge_names]
+
+
 def validate_lxc_deployment(deploy_path: Path) -> list[str]:
     """Return a list of error strings; empty means the LXC deployment JSON is valid."""
     try:
@@ -290,6 +309,8 @@ def validate_lxc_deployment(deploy_path: Path) -> list[str]:
         return ["Deployment file is not a JSON object"]
     if d.get("type") == "vm":
         return ['This looks like a VM deployment file ("type": "vm") — use deploy_vm.py instead']
+    if d.get("type") == "bigip":
+        return ['This is a BIG-IP deployment file ("type": "bigip") — use deploy_bigip.py instead']
     return validate_deployment_common(
         d, ("hostname", "node", "template_name", "storage", "bridge", "password")
     )
@@ -306,9 +327,120 @@ def validate_vm_deployment(deploy_path: Path) -> list[str]:
         return [f"Invalid JSON: {e}"]
     if not isinstance(d, dict):
         return ["Deployment file is not a JSON object"]
+    if d.get("type") == "bigip":
+        return ['This is a BIG-IP deployment file ("type": "bigip") — use deploy_bigip.py instead']
     if d.get("type") not in (None, "vm") or "template_name" in d:
         return ["This looks like an LXC deployment file — use deploy_lxc.py instead"]
     return validate_deployment_common(
         d, ("hostname", "node", "cloud_image_storage", "cloud_image_filename",
             "storage", "bridge", "password")
     )
+
+
+def validate_bigip_deployment(deploy_path: Path) -> list[str]:
+    """Return a list of error strings; empty means the BIG-IP deployment JSON is valid.
+
+    BIG-IP deploys use a stripped-down schema:
+      - No cloud-init / password / static IP (the appliance self-configures)
+      - qcow_filename references a file in appliance-images/
+      - machine_type and bios are explicit (BIG-IP needs pc-i440fx-8.0 + SeaBIOS)
+      - nics[] array supports multi-NIC, with optional per-NIC vlan (omit/null = untagged)
+    """
+    try:
+        with open(deploy_path) as f:
+            d = json.load(f)
+    except FileNotFoundError:
+        return [f"File not found: {deploy_path}"]
+    except json.JSONDecodeError as e:
+        return [f"Invalid JSON: {e}"]
+    if not isinstance(d, dict):
+        return ["Deployment file is not a JSON object"]
+    if d.get("type") != "bigip":
+        return ['BIG-IP deployment files must have "type": "bigip"']
+
+    errors = []
+
+    for field in ("hostname", "node", "qcow_filename", "storage"):
+        val = d.get(field)
+        if not val or not isinstance(val, str) or not val.strip():
+            errors.append(f"'{field}' is required and must be a non-empty string")
+
+    cpus = d.get("cpus")
+    if cpus is None:
+        errors.append("'cpus' is required")
+    elif not isinstance(cpus, int) or cpus <= 0:
+        errors.append(f"'cpus' must be a positive integer (got {cpus!r})")
+
+    mem = d.get("memory_gb")
+    if mem is None:
+        errors.append("'memory_gb' is required")
+    elif not isinstance(mem, (int, float)) or mem <= 0:
+        errors.append(f"'memory_gb' must be a positive number (got {mem!r})")
+
+    disk = d.get("disk_gb")
+    if disk is None:
+        errors.append("'disk_gb' is required")
+    elif not isinstance(disk, (int, float)) or disk <= 0:
+        errors.append(f"'disk_gb' must be a positive number (got {disk!r})")
+
+    nics = d.get("nics")
+    if not isinstance(nics, list) or len(nics) == 0:
+        errors.append("'nics' is required and must be a non-empty list (first NIC is management)")
+    else:
+        for i, nic in enumerate(nics):
+            if not isinstance(nic, dict):
+                errors.append(f"nics[{i}] must be an object")
+                continue
+            if not nic.get("bridge") or not isinstance(nic["bridge"], str):
+                errors.append(f"nics[{i}].bridge is required and must be a string")
+            vlan = nic.get("vlan")
+            if vlan is not None and (not isinstance(vlan, int) or not (1 <= vlan <= 4094)):
+                errors.append(f"nics[{i}].vlan must be an integer 1–4094 or omitted/null (got {vlan!r})")
+            model = nic.get("model")
+            if model is not None and (not isinstance(model, str) or not model.strip()):
+                errors.append(f"nics[{i}].model must be a non-empty string when set")
+
+    machine_type = d.get("machine_type")
+    if machine_type is not None and (not isinstance(machine_type, str) or not machine_type.strip()):
+        errors.append(f"'machine_type' must be a non-empty string when set (got {machine_type!r})")
+
+    # First-boot fields: all required because deploy_bigip.py automates first-boot
+    # (password change + mgmt IP + license activation).  No partial-config mode.
+    pw = d.get("password")
+    if not pw or not isinstance(pw, str) or not pw.strip():
+        errors.append("'password' is required and must be a non-empty string (new root/admin password)")
+
+    mgmt_ip = d.get("mgmt_ip")
+    if not mgmt_ip or not isinstance(mgmt_ip, str):
+        errors.append("'mgmt_ip' is required (management interface IPv4 address)")
+    elif not _check_ipv4(mgmt_ip):
+        errors.append(f"'mgmt_ip' must be a valid IPv4 address (got {mgmt_ip!r})")
+
+    prefix = d.get("mgmt_prefix_len")
+    if prefix is None:
+        errors.append("'mgmt_prefix_len' is required (e.g. 24)")
+    elif not isinstance(prefix, int) or not (1 <= prefix <= 32):
+        errors.append(f"'mgmt_prefix_len' must be an integer 1–32 (got {prefix!r})")
+
+    gw = d.get("mgmt_gateway")
+    if gw is not None and gw != "" and not _check_ipv4(gw):
+        errors.append(f"'mgmt_gateway' must be a valid IPv4 address when set (got {gw!r})")
+
+    dns = d.get("mgmt_dns")
+    if dns is not None:
+        if isinstance(dns, str):
+            servers = dns.split()
+        elif isinstance(dns, list):
+            servers = dns
+        else:
+            errors.append(f"'mgmt_dns' must be a string or list of IPv4 addresses (got {dns!r})")
+            servers = []
+        for s in servers:
+            if not isinstance(s, str) or not _check_ipv4(s):
+                errors.append(f"'mgmt_dns' entry must be a valid IPv4 address (got {s!r})")
+
+    reg = d.get("registration_key")
+    if not reg or not isinstance(reg, str) or not reg.strip():
+        errors.append("'registration_key' is required (F5 license registration key)")
+
+    return errors

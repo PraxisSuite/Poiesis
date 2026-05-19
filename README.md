@@ -3,7 +3,7 @@
 > *From the Greek: the act of making, bringing something into being.*
 > *Pronounced: poy-EE-sis*
 
-**Poiesis** is a command-line wizard for provisioning, configuring, and onboarding LXC containers and QEMU virtual machines in a Proxmox VE homelab cluster. Handles the full lifecycle from resource creation through post-deployment configuration, DNS registration, Ansible inventory registration, TTL-based auto-expiry, and batch cleanup — all from a single guided session or a pre-built deployment file. Companion decommission scripts reverse the process cleanly.
+**Poiesis** is a command-line wizard for provisioning, configuring, and onboarding LXC containers, QEMU virtual machines, and F5 BIG-IP appliances in a Proxmox VE homelab cluster. Handles the full lifecycle from resource creation through post-deployment configuration, DNS registration, Ansible inventory registration, TTL-based auto-expiry, and batch cleanup — all from a single guided session or a pre-built deployment file. Companion decommission scripts reverse the process cleanly, including F5 license revocation.
 
 Poiesis is part of the **[Praxis Suite](https://github.com/PraxisSuite)** — an open source ecosystem of homelab management tools built around the idea that a homelab should not be a second job.
 
@@ -30,15 +30,17 @@ The suite takes its name and its tools from Aristotle's three fundamental human 
 
 ## What It Does
 
-Poiesis manages the complete lifecycle of Proxmox resources across eight scripts:
+Poiesis manages the complete lifecycle of Proxmox resources across ten scripts:
 
 - **`configure.py`** — interactive wizard to build or edit `config.yaml` with per-field hints, autocomplete timezone picker, and immediate validation
 - **`deploy_lxc.py`** — interactive wizard to fully provision and onboard an LXC container (create, bootstrap SSH, run Ansible, register DNS and inventory); supports both DHCP and static IP addressing; writes a full deployment log to `logs/last-deployment.log`
 - **`decomm_lxc.py`** — permanently destroy a container and remove all associated records; writes a full decommission log to `logs/last-decomm.log`
 - **`deploy_vm.py`** — interactive wizard to provision and onboard a QEMU VM via cloud-init with multi-OS Ansible post-deploy; writes a full deployment log to `logs/last-deployment.log`
 - **`decomm_vm.py`** — permanently destroy a VM and remove all associated records; writes a full decommission log to `logs/last-decomm.log`
-- **`deploy.py`** — batch deploy multiple LXC containers and/or VMs in parallel from deployment JSON files, with a live per-host status board (showing target node), summary table, and idempotent re-run protection
-- **`decomm.py`** — batch decommission multiple resources from deployment JSON files, sequentially by default to avoid DNS race conditions
+- **`deploy_bigip.py`** — file-driven deploy for F5 BIG-IP appliances: uploads a licensed qcow, creates the VM with pinned machine type (`pc-i440fx-8.0`) and multi-NIC config, then drives first-boot via the Proxmox serial console (login + password change + mgmt IP/DNS/NTP + license activation via `tmsh`); registers DNS and adds to the `[BIGIPs]` Ansible inventory group
+- **`decomm_bigip.py`** — revoke the F5 license (`tmsh revoke sys license`) so the key returns to your pool, remove DNS, remove from inventory, then destroy the VM; aborts before destroy if revocation fails so the appliance is recoverable; supports `--force-decomm` to skip revoke when the VM is hung/unreachable
+- **`deploy.py`** — single-file or batch deploy (LXC / VM / BIG-IP) — auto-dispatches by `type` field. Single-file via `--deploy-file`; batch via `--batch` or `--batch-dir` with a live per-host status board, summary table, and idempotent re-run protection
+- **`decomm.py`** — single-file or batch decommission — auto-dispatches by `type` field. Sequential by default to avoid DNS race conditions; supports `--purge` (delete JSON) and `--force-decomm` (skip BIG-IP license revocation)
 - **`cleanup_tagged.py`** — scan the cluster for tagged resources and keep, promote, or decommission each one interactively or via a plan file
 - **`expire.py`** — manage deployment TTLs: check, reap expired hosts, or renew a deployment's TTL
 - **`draft-deployment.py`** — interactive wizard to build a deployment JSON file without deploying; runs the full LXC or VM wizard and saves the result for use with `deploy_lxc.py`, `deploy_vm.py`, or `deploy.py`
@@ -54,8 +56,10 @@ Poiesis/
 ├── decomm_lxc.py                  # LXC decommission script
 ├── deploy_vm.py                   # QEMU VM provisioning wizard
 ├── decomm_vm.py                   # QEMU VM decommission script
-├── deploy.py                      # Batch deploy — multiple LXC/VM JSON files in parallel
-├── decomm.py                      # Batch decomm — multiple LXC/VM JSON files (sequential by default)
+├── deploy_bigip.py                # F5 BIG-IP file-driven deploy (qcow + serial-console firstboot + license activation)
+├── decomm_bigip.py                # F5 BIG-IP decommission (license revoke + DNS removal + destroy)
+├── deploy.py                      # Single-file or batch deploy — auto-dispatches LXC / VM / BIG-IP by 'type' field
+├── decomm.py                      # Single-file or batch decommission — auto-dispatches by 'type' field
 ├── cleanup_tagged.py              # Cluster-wide tag-based cleanup (keep/promote/decomm)
 ├── expire.py                      # Deployment TTL manager (check/reap/renew)
 ├── draft-deployment.py            # Interactive wizard to build a deployment JSON without deploying
@@ -79,13 +83,19 @@ Poiesis/
 │   ├── io.py                      # I/O helpers (logging, file utilities)
 │   ├── deploy.py                  # Shared deploy pipeline steps
 │   ├── decomm.py                  # Shared decommission pipeline steps
+│   ├── bigip.py                   # BIG-IP qcow resolve/extract, SFTP+importdisk, multi-NIC attach
+│   ├── bigip_firstboot.py         # BIG-IP serial-console automation (login/password/mgmt-ip/license)
 │   ├── ansible.py                 # Ansible integration helpers
 │   └── bind.py                    # BIND DNS integration helpers
+├── appliance-images/              # Licensed vendor qcow images (gitignored except README.md)
+│   └── README.md                  # How to stage BIG-IP and other appliance images
 ├── deployments/
 │   ├── lxc/                       # One JSON file per deployed LXC (gitignored except example-*)
 │   │   └── example-lxc.json       # Example deployment file (tracked)
 │   ├── vms/                       # One JSON file per deployed VM (gitignored except example-*)
 │   │   └── example-vm.json        # Example deployment file (tracked)
+│   ├── bigip/                     # One JSON file per deployed BIG-IP (gitignored except example-*)
+│   │   └── example-bigip-deployment.json  # Example deployment file (tracked)
 │   └── history.log                # Append-only log of all deploy/decomm events (one JSON per line)
 ├── examples/
 │   ├── list-file_keep-all.json           # Example: keep all tagged resources
@@ -102,6 +112,7 @@ Poiesis/
     ├── add-dns.yml                # Register A + PTR records in BIND
     ├── remove-dns.yml             # Remove A + PTR records from BIND
     ├── update-inventory.yml       # Add host to Ansible inventory on dev server
+    ├── update-bigip-inventory.yml # Add BIG-IP to [BIGIPs] group with license_key/bigip_user/bigip_password
     ├── remove-from-inventory.yml  # Remove host from Ansible inventory
     ├── vars/
     │   ├── Debian.yml             # OS-specific vars for Debian/Ubuntu family
@@ -227,6 +238,7 @@ The scripts auto-activate the virtualenv at startup, so you can run them with `p
 | [docs/configuration.md](docs/configuration.md) | All `config.yaml` fields, creating a Proxmox API token, SSH key setup, DNS zone file config, Ansible inventory server setup |
 | [docs/deploy-lxc.md](docs/deploy-lxc.md) | `deploy_lxc.py` flags, interactive and file-based mode, DHCP vs static IP, `--silent`, deployment logs, example scenarios |
 | [docs/deploy-vm.md](docs/deploy-vm.md) | `deploy_vm.py` flags, cloud-init, multi-OS support, `--silent`, deployment logs, example scenarios |
+| [docs/deploy-bigip.md](docs/deploy-bigip.md) | `deploy_bigip.py` and `decomm_bigip.py` — F5 BIG-IP deployment, the 7-step pipeline (incl. serial-console first-boot + license activation), `--force-decomm`, schema requirements, failure modes |
 | [docs/decommission.md](docs/decommission.md) | `decomm_lxc.py` and `decomm_vm.py` flags, interactive and file-based mode, `--purge`, `--silent`, decommission logs, example scenarios |
 | [docs/batch.md](docs/batch.md) | `deploy.py` and `decomm.py` — batch operations, `--parallel`, `--validate`, `--batch-dir`, `--yolo`, `--ttl`, `--purge` |
 | [docs/expiry.md](docs/expiry.md) | All `expire.py` flags, `--check` output example, `--reap`, `--renew`, TTL format reference |
@@ -265,12 +277,23 @@ python3 deploy_vm.py
 python3 deploy_lxc.py --deploy-file deployments/lxc/myserver.json --silent
 python3 deploy_vm.py --deploy-file deployments/vms/myvm.json --silent
 
+# Deploy a BIG-IP appliance (file-driven only — stage qcow in appliance-images/ first)
+python3 deploy_bigip.py --deploy-file deployments/bigip/bigip-prod01.json
+
+# Or via the unified dispatcher (auto-detects LXC / VM / BIG-IP by 'type' field)
+python3 deploy.py --deploy-file deployments/bigip/bigip-prod01.json
+
 # Check the deployment log after any interactive run
 cat logs/last-deployment.log
 
 # Decommission a container or VM
 python3 decomm_lxc.py
 python3 decomm_vm.py
+
+# Decommission a BIG-IP (revokes F5 license before destroy — keeps the key reusable)
+python3 decomm_bigip.py --deploy-file deployments/bigip/bigip-prod01.json
+# Or skip license revocation when the VM is hung/unreachable
+python3 decomm_bigip.py --deploy-file deployments/bigip/bigip-prod01.json --force-decomm
 
 # Batch deploy multiple resources in parallel (up to 3 at a time by default)
 python3 deploy.py --batch deployments/lxc/web1.json deployments/lxc/db1.json

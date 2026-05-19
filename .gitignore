@@ -32,8 +32,15 @@ logs/
 # Deployment records (real deployments — examples are tracked explicitly)
 deployments/lxc/*.json
 deployments/vms/*.json
+deployments/bigip/*.json
 !deployments/lxc/example-*.json
 !deployments/vms/example-*.json
+!deployments/bigip/example-*.json
+
+# Vendor appliance images (large, licensed — never commit)
+# Ignore everything in the folder EXCEPT the README that documents how to use it.
+appliance-images/*
+!appliance-images/README.md
 CLAUDE.md
 
 # Claude Code

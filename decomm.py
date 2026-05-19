@@ -52,6 +52,8 @@ def peek_type(path: Path) -> str | None:
     try:
         with open(path) as f:
             d = json.load(f)
+        if d.get("type") == "bigip":
+            return "bigip"
         if d.get("type") == "lxc" or "template_name" in d:
             return "lxc"
         return "vm"
@@ -69,8 +71,9 @@ def peek_hostname(path: Path) -> str:
 
 
 def collect_files(args) -> list[Path]:
-    if args.batch:
-        files = [Path(p) for p in args.batch]
+    paths = args.deploy_file or args.batch
+    if paths:
+        files = [Path(p) for p in paths]
         missing = [p for p in files if not p.exists()]
         if missing:
             for p in missing:
@@ -150,8 +153,17 @@ def decomm_one(
         console.print()
         console.print(f"[bold red]── [{idx}/{total}] {hostname} ({kind}) ──[/bold red]")
 
-    script = str(_ROOT / ("decomm_lxc.py" if kind == "lxc" else "decomm_vm.py"))
-    cmd = [sys.executable, script, "--silent", "--deploy-file", str(path)] + passthrough_args
+    script = str(_ROOT / {
+        "lxc":   "decomm_lxc.py",
+        "vm":    "decomm_vm.py",
+        "bigip": "decomm_bigip.py",
+    }[kind])
+    # --force-decomm is only meaningful for BIG-IP (its license-revoke step). Filter it
+    # out for lxc/vm so their argparsers don't reject it.
+    effective_passthrough = passthrough_args if kind == "bigip" else [
+        a for a in passthrough_args if a != "--force-decomm"
+    ]
+    cmd = [sys.executable, script, "--silent", "--deploy-file", str(path)] + effective_passthrough
 
     t0 = time.time()
     try:
@@ -248,11 +260,16 @@ def print_summary(results: list[dict], con: Console | None = None) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="decomm.py",
-        description="Poiesis Batch Decomm — decommission multiple VMs/LXCs from JSON files",
+        description="Poiesis Decomm — decommission LXC containers, VMs, and BIG-IPs from "
+                    "JSON files. Dispatches per-file by 'type' field (lxc / vm / bigip).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--deploy-file", nargs=1, metavar="FILE",
+        help="Single deployment JSON file (dispatched by type)",
+    )
     group.add_argument(
         "--batch", nargs="+", metavar="FILE",
         help="One or more deployment JSON files to decommission",
@@ -266,6 +283,9 @@ def main() -> None:
                         help="Path to config.yaml (default: config.yaml next to this script)")
     parser.add_argument("--purge", action="store_true",
                         help="Delete deployment JSON files after decommission")
+    parser.add_argument("--force-decomm", action="store_true",
+                        help="(BIG-IP only) Skip license revocation. Use when the VM is "
+                             "stopped/unreachable or the license is already revoked/absent.")
     parser.add_argument(
         "--parallel", metavar="N", type=int, default=1,
         help="Max concurrent decomms (default: 1 — sequential avoids DNS zone race conditions)",
@@ -299,6 +319,8 @@ def main() -> None:
         passthrough += ["--config", args.config]
     if args.purge:
         passthrough += ["--purge"]
+    if args.force_decomm:
+        passthrough += ["--force-decomm"]
 
     total = len(files)
     results: list[dict | None] = [None] * total

@@ -146,6 +146,143 @@ VM-specific fields:
 
 ---
 
+## BIG-IP Deployment File
+
+Written by `deploy_bigip.py`. Read by `decomm_bigip.py`, `cleanup_tagged.py`.
+
+BIG-IP deploys differ structurally from VMs: no cloud-init, the image is a licensed local
+qcow rather than a public download, multi-NIC by default, pinned machine type, automated
+first-boot login + password change + management IP + DNS + NTP + license activation via
+serial console.
+
+### Full Example
+
+```json
+{
+  "type": "bigip",
+  "hostname": "bigip-example",
+  "fqdn": "bigip-example.example.com",
+  "node": "proxmox01",
+  "vmid": null,
+  "qcow_filename": "BIGIP-17.5.0-0.0.13.ALL-scsi.qcow2",
+  "machine_type": "pc-i440fx-8.0",
+  "bios": "seabios",
+  "scsi_controller": "virtio-scsi-pci",
+  "cpus": 4,
+  "memory_gb": 16.0,
+  "disk_gb": 82,
+  "storage": "local-lvm",
+  "password": "CHANGE_ME_BEFORE_DEPLOY",
+  "mgmt_ip": "10.0.0.40",
+  "mgmt_prefix_len": 24,
+  "mgmt_gateway": "10.0.0.1",
+  "mgmt_dns": "10.0.0.2 10.0.0.3",
+  "registration_key": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXXXX",
+  "nics": [
+    {"bridge": "vmbr0", "vlan": 100, "model": "vmxnet3"},
+    {"bridge": "vmbr0", "vlan": 200, "model": "vmxnet3"},
+    {"bridge": "vmbr0", "vlan": 300, "model": "vmxnet3"},
+    {"bridge": "vmbr0", "vlan": 220, "model": "vmxnet3"},
+    {"bridge": "vmbr1", "model": "vmxnet3"}
+  ],
+  "deployed_at": "2026-05-18 11:14:43",
+  "ttl": "30d",
+  "expires_at": "2026-06-17T11:14:43.000000+00:00",
+  "preflight": true
+}
+```
+
+### Field Reference
+
+Shared with VM/LXC (same meaning): `hostname`, `fqdn`, `node`, `vmid`, `cpus`, `memory_gb`,
+`disk_gb`, `storage`, `deployed_at`, `ttl`, `expires_at`, `preflight`.
+
+BIG-IP-specific fields:
+
+| Field | Required | Default | Description |
+|---|---|---|---|
+| `type` | ✓ | — | Must be `"bigip"`. Distinguishes BIG-IP files from VM/LXC when batch-dispatched. |
+| `qcow_filename` | ✓ | — | Filename of the qcow inside `appliance-images/`. Can name a `.qcow2` or `.qcow2.zip` — a zip is auto-extracted before deploy (and the zip deleted on success). Glob is `BIGIP*.qcow2` / `BIGIP*.qcow2.zip`. |
+| `machine_type` | optional | `pc-i440fx-8.0` | Proxmox machine type. **F5 requires `pc-i440fx-8.0` on Proxmox.** Override at your own risk; a warning is emitted if you pick something else. |
+| `bios` | optional | `seabios` | BIOS for the VM. |
+| `scsi_controller` | optional | `virtio-scsi-pci` | SCSI controller model. |
+| `password` | ✓ | — | The new password to set on the `root` and `admin` users during first-boot. Replaces the BIG-IP factory default of `default`. Stored plaintext like LXC/VM deployments — use a config-management secret in production. |
+| `mgmt_ip` | ✓ | — | Static IPv4 address to assign to the BIG-IP management interface (net0). |
+| `mgmt_prefix_len` | ✓ | — | Network prefix length for the management interface (e.g. `24`). |
+| `mgmt_gateway` | optional | — | Default route gateway for the management interface. Recommended — license activation needs outbound HTTPS. |
+| `mgmt_dns` | optional | — | Space-separated list of DNS server IPs, or a JSON array. **If omitted, no DNS is configured on the BIG-IP** and license activation will fail unless DNS is already reachable some other way. Example: `"192.168.1.4 192.168.1.5"`. |
+| `registration_key` | ✓ | — | F5 license registration key (5 segments, hyphen-separated). Used at first-boot to activate via `tmsh install sys license`. |
+| `nics` | ✓ | — | List of NIC objects (must be non-empty). `nics[0]` is always the management interface. |
+| `nics[].bridge` | ✓ | — | Proxmox bridge name (e.g. `vmbr0`, `vmbr1`). Verified to exist on the target node before any disk upload. |
+| `nics[].vlan` | optional | none | VLAN tag (integer 1–4094). Omit or set to `null` for an untagged interface on that bridge. |
+| `nics[].model` | optional | `vmxnet3` | NIC model. F5 traditionally uses `vmxnet3` (carryover from the VMware era); `virtio` also works. |
+
+### Deploy Pipeline (7 steps)
+
+`deploy_bigip.py` performs the following, in order, after preflight + bridge verification:
+
+1. **Create VM** with the pinned machine type, BIOS, SCSI controller, serial0 console, and
+   all NICs from `nics[]`.
+2. **Upload qcow** to the target Proxmox node via SFTP, then `qm importdisk` to the chosen
+   storage (e.g. `local-lvm`). Temporary upload is cleaned up after import.
+3. **Attach disk** as `scsi0`, resize to `disk_gb`, and finalize NIC configuration.
+4. **Start VM**, then save the deployment file with the assigned VMID.
+5. **First-boot configuration** via the Proxmox node's serial console:
+   - Wait for the BIG-IP login prompt (up to 6 min for first boot)
+   - Log in as `root` / `default`, change to the configured `password`
+   - Set `admin` password to match (via `passwd admin`)
+   - Wait for mcpd to be stably running (polls every 60s, requires 2 consecutive healthy
+     checks, up to 30 min)
+   - Configure management IP, prefix, gateway via `tmsh`
+   - Configure DNS + NTP (if provided) via `tmsh`
+   - Wait for mcpd stably running again
+   - Install + activate license via `tmsh install sys license registration-key`
+   - Wait for mcpd stably running after license install (license operations restart mcpd)
+   - Verify license is active
+6. **Register DNS** A + PTR records via the existing BIND-via-Ansible flow.
+7. **Update Ansible inventory** — adds the BIG-IP to the `[BIGIPs]` group on the development
+   server using a BIG-IP-specific playbook (`update-bigip-inventory.yml`). No SSH key copy
+   is performed (BIG-IPs are managed via iControl REST, not SSH). Entry format:
+   ```
+   <hostname> ansible_host=<fqdn> ansible_python_interpreter=/usr/bin/python3 \
+              license_key=<key> bigip_user=admin bigip_password=<password>
+   ```
+
+### Decomm Pipeline (5 steps)
+
+`decomm_bigip.py` performs:
+
+1. **Revoke license** via serial console: attaches, sends Ctrl-C to clear any stuck prompt,
+   logs in (if needed using the post-firstboot password from the JSON), waits for mcpd
+   stable, sends `tmsh revoke sys license`, answers the `Y/N` confirmation, waits for mcpd
+   stable, verifies revoked. **Skipped if `--force-decomm` is passed.**
+2. **Remove DNS records** (A + PTR) via the BIND-via-Ansible flow. Non-fatal.
+3. **Remove from Ansible inventory.** Non-fatal.
+4. **Destroy VM** in Proxmox (stop + delete with purge + destroy unreferenced disks).
+5. **Deployment file** — by default kept on disk (use `--purge` to delete).
+
+If revocation fails, the script aborts before destroying the VM so the operator can fix it
+manually. Use `--force-decomm` to skip revocation when the VM is hung/unreachable or the
+license has already been revoked manually (the F5 key will stay consumed if you bypass
+revocation).
+
+### Operational Notes
+
+- **Tags applied in Proxmox:** `auto-deploy;bigip`.
+- **F5 hard requirement:** `machine_type` must be `pc-i440fx-8.0` (the default). Other
+  machine types will boot but TMOS is not supported on them.
+- **Bridge preflight:** every NIC's bridge must exist on the target node — this is verified
+  before any 8 GB qcow upload starts.
+- **Image auto-extract:** if `qcow_filename` resolves to a `.qcow2.zip` file, Poiesis extracts
+  it in place and deletes the zip on success (one-time per image per host).
+- **License activation requires DNS + outbound HTTPS** from the management IP to F5's
+  activation servers. If you omit `mgmt_dns`, ensure DNS is reachable some other way.
+- **Parallel deploys to two different nodes** can occasionally stall in paramiko's SFTP
+  layer. If you regularly deploy 2+ at once, use a generous `--stagger` and treat hangs
+  as a known issue.
+
+---
+
 ## Using Deployment Files as Input (`--deploy-file`)
 
 Both `deploy_lxc.py` and `deploy_vm.py` accept `--deploy-file <path>` to pre-fill prompts

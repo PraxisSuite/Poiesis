@@ -43,6 +43,7 @@ from modules.lib import (
     validate_config,
     validate_lxc_deployment,
     validate_vm_deployment,
+    validate_bigip_deployment,
     get_running_vmids,
 )
 
@@ -59,10 +60,12 @@ _LOG_DIR = _ROOT / "logs"
 
 
 def peek_type(path: Path) -> str | None:
-    """Read the deployment JSON and return 'lxc' or 'vm'. Returns None on parse error."""
+    """Read the deployment JSON and return 'lxc', 'vm', or 'bigip'. Returns None on parse error."""
     try:
         with open(path) as f:
             d = json.load(f)
+        if d.get("type") == "bigip":
+            return "bigip"
         if d.get("type") == "lxc" or "template_name" in d:
             return "lxc"
         return "vm"
@@ -102,9 +105,10 @@ def peek_vmid(path: Path) -> int | None:
 
 
 def collect_files(args) -> list[Path]:
-    """Resolve the list of deployment JSON files from --batch or --batch-dir."""
-    if args.batch:
-        files = [Path(p) for p in args.batch]
+    """Resolve the list of deployment JSON files from --deploy-file, --batch, or --batch-dir."""
+    paths = args.deploy_file or args.batch
+    if paths:
+        files = [Path(p) for p in paths]
         missing = [p for p in files if not p.exists()]
         if missing:
             for p in missing:
@@ -196,7 +200,11 @@ def run_validate_all(files: list[Path], config_path: str | None) -> bool:
             console.print(f"[red]✗ {path.name}  —  invalid JSON[/red]")
             all_ok = False
             continue
-        validator = validate_lxc_deployment if kind == "lxc" else validate_vm_deployment
+        validator = {
+            "lxc":   validate_lxc_deployment,
+            "vm":    validate_vm_deployment,
+            "bigip": validate_bigip_deployment,
+        }[kind]
         errors = validator(path)
         if errors:
             console.print(f"[red]✗ {path.name}  ({hostname})[/red]")
@@ -257,7 +265,11 @@ def deploy_one(
         console.print()
         console.print(f"[bold]── [{idx}/{total}] {hostname} ({kind}) ──[/bold]")
 
-    script = str(_ROOT / ("deploy_lxc.py" if kind == "lxc" else "deploy_vm.py"))
+    script = str(_ROOT / {
+        "lxc":   "deploy_lxc.py",
+        "vm":    "deploy_vm.py",
+        "bigip": "deploy_bigip.py",
+    }[kind])
     cmd = [sys.executable, script, "--deploy-file", str(path), "--silent"] + passthrough_args
 
     t0 = time.time()
@@ -361,11 +373,16 @@ def print_summary(results: list[dict], con: Console | None = None) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="deploy.py",
-        description="Poiesis Batch Deploy — deploy multiple VMs/LXCs from JSON files",
+        description="Poiesis Deploy — deploy LXC containers, VMs, and BIG-IPs from JSON files. "
+                    "Dispatches per-file by 'type' field (lxc / vm / bigip).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--deploy-file", nargs=1, metavar="FILE",
+        help="Single deployment JSON file (dispatched by type)",
+    )
     group.add_argument(
         "--batch", nargs="+", metavar="FILE",
         help="One or more deployment JSON files to deploy in order",

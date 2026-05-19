@@ -131,6 +131,53 @@ def run_ansible_inventory_update(cfg: dict, hostname: str, ip: str, password: st
         console.print(f"  [green]✓ Inventory updated on {dev_server}[/green]")
 
 
+def run_ansible_inventory_update_bigip(cfg: dict, hostname: str, fqdn: str,
+                                        license_key: str, admin_user: str,
+                                        admin_password: str,
+                                        group: str = "BIGIPs") -> None:
+    """Add a BIG-IP entry to the Ansible inventory under [BIGIPs] (or custom group).
+
+    Unlike run_ansible_inventory_update, this does NOT copy an SSH key — BIG-IPs are
+    managed via iControl REST, not SSH. The entry includes license_key + bigip_user +
+    bigip_password fields used by F5's Ansible modules.
+    """
+    inv_cfg = cfg.get("ansible_inventory", {})
+    if not inv_cfg:
+        console.print("  [dim]Inventory update skipped (not configured)[/dim]")
+        return
+    if not inv_cfg.get("enabled", True):
+        console.print("  [dim]Inventory update skipped (ansible_inventory.enabled: false)[/dim]")
+        return
+
+    ansible_dir = _ROOT / "ansible"
+    dev_server = inv_cfg["server"]
+    dev_user = inv_cfg.get("user", "root")
+
+    cmd = [
+        "ansible-playbook",
+        "-i", f"{dev_server},",
+        str(ansible_dir / "update-bigip-inventory.yml"),
+        "-e", f"bigip_hostname={hostname}",
+        "-e", f"bigip_fqdn={fqdn}",
+        "-e", f"bigip_license_key={license_key}",
+        "-e", f"bigip_admin_user={admin_user}",
+        "-e", f"bigip_admin_password={admin_password}",
+        "-e", f"inventory_file={inv_cfg['file']}",
+        "-e", f"inventory_group={group}",
+        "-u", dev_user,
+        "--timeout", "30",
+    ]
+    console.print(f"  [dim]Adding {hostname} to [{group}] in inventory on {dev_server}...[/dim]")
+    result = subprocess.run(cmd, cwd=str(ansible_dir))
+    if result.returncode != 0:
+        console.print(
+            f"  [yellow]Warning: Inventory update failed. Add manually to [{group}]: "
+            f"{hostname} ansible_host={fqdn} license_key={license_key}[/yellow]"
+        )
+    else:
+        console.print(f"  [green]✓ Inventory updated on {dev_server}[/green]")
+
+
 def remove_from_inventory(cfg: dict, deploy: dict) -> None:
     """Remove a host from the Ansible inventory via playbook (skipped if not configured)."""
     inv_cfg = cfg.get("ansible_inventory", {})
