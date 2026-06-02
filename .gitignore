@@ -37,6 +37,9 @@ deployments/bigip/*.json
 !deployments/vms/example-*.json
 !deployments/bigip/example-*.json
 
+# Personal / private deployments — never commit anything in this folder.
+deployments/mine/
+
 # Vendor appliance images (large, licensed — never commit)
 # Ignore everything in the folder EXCEPT the README that documents how to use it.
 appliance-images/*
