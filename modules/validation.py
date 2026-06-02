@@ -365,6 +365,26 @@ def validate_bigip_deployment(deploy_path: Path) -> list[str]:
         if not val or not isinstance(val, str) or not val.strip():
             errors.append(f"'{field}' is required and must be a non-empty string")
 
+    qcow_filename = d.get("qcow_filename")
+    if isinstance(qcow_filename, str) and qcow_filename.strip():
+        appliance_dir = _ROOT / "appliance-images"
+        if not appliance_dir.is_dir():
+            errors.append(f"appliance-images/ directory not found at {appliance_dir}")
+        else:
+            direct = appliance_dir / qcow_filename
+            zip_name = qcow_filename if qcow_filename.endswith(".zip") else f"{qcow_filename}.zip"
+            zip_path = appliance_dir / zip_name
+            if not direct.exists() and not zip_path.exists():
+                available = sorted(
+                    p.name for p in appliance_dir.iterdir()
+                    if p.is_file() and (p.suffix == ".qcow2" or p.name.endswith(".qcow2.zip"))
+                )
+                hint = ("Available: " + ", ".join(available)) if available else "No qcow images staged."
+                errors.append(
+                    f"qcow_filename '{qcow_filename}' not found in {appliance_dir} "
+                    f"(checked direct file and {zip_name}). {hint}"
+                )
+
     cpus = d.get("cpus")
     if cpus is None:
         errors.append("'cpus' is required")

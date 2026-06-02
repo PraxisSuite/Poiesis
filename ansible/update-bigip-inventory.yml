@@ -1,0 +1,110 @@
+---
+# ============================================================
+# Ansible Inventory Update Playbook — BIG-IP variant
+# ============================================================
+# Inserts a BIG-IP-style inventory entry (with license_key,
+# bigip_user, bigip_password) into the configured group.  Unlike
+# update-inventory.yml, this does NOT copy an SSH key to the
+# host — BIG-IPs are managed via iControl REST, not SSH.
+#
+# Usage (called automatically by deploy_bigip.py):
+#   ansible-playbook -i dev.example.com, update-bigip-inventory.yml \
+#     -e bigip_hostname=<hostname>            # e.g. bigip-prod01
+#     -e bigip_fqdn=<hostname.domain>         # e.g. bigip-prod01.example.com
+#     -e bigip_license_key=<F5 key>           # e.g. XXXXX-XXXXX-XXXXX-XXXXX-XXXXXXX
+#     -e bigip_admin_user=admin
+#     -e bigip_admin_password=<post-firstboot password>
+#     -e inventory_file=/root/ansible/inventory/hosts
+#     -e inventory_group=BIGIPs
+# ============================================================
+- name: Update Ansible inventory on development server (BIG-IP)
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Check that inventory file exists
+      stat:
+        path: "{{ inventory_file }}"
+      register: inv_stat
+
+    - name: Fail if inventory file does not exist
+      fail:
+        msg: "Inventory file {{ inventory_file }} not found on {{ inventory_hostname }}"
+      when: not inv_stat.stat.exists
+
+    - name: Check if host is already in inventory
+      shell: "grep -c '^{{ bigip_hostname }} ' {{ inventory_file }} || true"
+      register: host_exists
+      changed_when: false
+
+    - name: Create backup of inventory file before modifying
+      copy:
+        src: "{{ inventory_file }}"
+        dest: "{{ inventory_file }}.bak.{{ ansible_date_time.epoch | default('backup') }}"
+        remote_src: true
+      when: host_exists.stdout | int == 0
+
+    - name: Write host insertion script
+      copy:
+        dest: /tmp/insert_bigip_{{ bigip_hostname }}.py
+        content: |
+          import os
+          group = os.environ['INV_GROUP']
+          entry = os.environ['INV_ENTRY']
+          path = os.environ['INV_FILE']
+          lines = open(path).readlines()
+          in_group = False
+          insert_pos = len(lines)
+          for i, line in enumerate(lines):
+              stripped = line.strip()
+              if stripped == f'[{group}]':
+                  in_group = True
+              elif in_group and stripped.startswith('['):
+                  insert_pos = i
+                  while insert_pos > 0 and not lines[insert_pos - 1].strip():
+                      insert_pos -= 1
+                  break
+          lines.insert(insert_pos, entry + '\n')
+          open(path, 'w').write(''.join(lines))
+      when: host_exists.stdout | int == 0
+
+    - name: Add BIG-IP at end of [{{ inventory_group }}] section
+      shell: python3 /tmp/insert_bigip_{{ bigip_hostname }}.py
+      environment:
+        INV_GROUP: "{{ inventory_group }}"
+        INV_ENTRY: >-
+          {{ bigip_hostname }} ansible_host={{ bigip_fqdn }} ansible_python_interpreter=/usr/bin/python3
+          license_key={{ bigip_license_key }} bigip_user={{ bigip_admin_user }}
+          bigip_password={{ bigip_admin_password }}
+        INV_FILE: "{{ inventory_file }}"
+      when: host_exists.stdout | int == 0
+      register: inv_updated
+      changed_when: true
+      no_log: true
+
+    - name: Remove insertion script
+      file:
+        path: /tmp/insert_bigip_{{ bigip_hostname }}.py
+        state: absent
+
+    - name: Show result
+      debug:
+        msg: >-
+          {% if host_exists.stdout | int > 0 %}
+          Host '{{ bigip_hostname }}' already exists in inventory — no change made.
+          {% elif inv_updated.changed %}
+          Added '{{ bigip_hostname }}' to [{{ inventory_group }}] group in {{ inventory_file }}.
+          {% else %}
+          No changes made.
+          {% endif %}
+
+    - name: Show updated inventory section (confirmation)
+      shell: "grep -A 20 '\\[{{ inventory_group }}\\]' {{ inventory_file }} | head -25"
+      register: group_section
+      changed_when: false
+      when: inv_updated.changed | default(false)
+
+    - name: Display updated group section
+      debug:
+        msg: "{{ group_section.stdout_lines }}"
+      when: inv_updated.changed | default(false)

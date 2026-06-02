@@ -385,7 +385,8 @@ def main() -> None:
     )
     group.add_argument(
         "--batch", nargs="+", metavar="FILE",
-        help="One or more deployment JSON files to deploy in order",
+        help="One or more deployment JSON files to deploy "
+             "(executed concurrently per --parallel; sequential with --parallel 1)",
     )
     group.add_argument(
         "--batch-dir", metavar="DIR",
