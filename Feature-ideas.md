@@ -1,5 +1,38 @@
 # Feature Ideas
 
+## Standalone DNS / Inventory Helper Scripts
+
+Today, DNS A/PTR registration and Ansible inventory updates only happen as part of a
+deploy. Sometimes you just need to add a single record (e.g. for an external appliance,
+a physical host, or a one-off entry) without spinning up a Proxmox resource.
+
+### Usage
+
+```bash
+# Add a DNS A + PTR record to BIND
+python3 add-dns.py --hostname clyde --ip 192.168.1.180
+
+# Remove a DNS A + PTR record
+python3 remove-dns.py --hostname clyde --ip 192.168.1.180
+
+# Add a host to the Ansible inventory (Linux group by default)
+python3 add-inventory.py --hostname clyde --ip 192.168.1.180 --group Linux
+
+# Remove a host from the Ansible inventory
+python3 remove-inventory.py --hostname clyde
+```
+
+### Implementation notes
+
+- Thin CLI wrappers around the existing helpers in `modules/bind.py` and `modules/ansible.py`
+  (`run_ansible_add_dns`, `remove_dns`, `run_ansible_inventory_update`, `remove_from_inventory`).
+- Pull defaults from `config.yaml` like the deploy scripts do (DNS server, inventory file path, etc.).
+- Support `--config` for alternate config file path.
+- Validate IP / hostname format before invoking Ansible.
+- Optional `--dry-run` flag.
+
+---
+
 ## Extra Tags in Deployment Files
 
 Add an `extra_tags` field to both LXC and VM deployment files to allow arbitrary Proxmox tags
