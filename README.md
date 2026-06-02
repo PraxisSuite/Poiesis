@@ -37,10 +37,10 @@ Poiesis manages the complete lifecycle of Proxmox resources across ten scripts:
 - **`decomm_lxc.py`** — permanently destroy a container and remove all associated records; writes a full decommission log to `logs/last-decomm.log`
 - **`deploy_vm.py`** — interactive wizard to provision and onboard a QEMU VM via cloud-init with multi-OS Ansible post-deploy; writes a full deployment log to `logs/last-deployment.log`
 - **`decomm_vm.py`** — permanently destroy a VM and remove all associated records; writes a full decommission log to `logs/last-decomm.log`
-- **`deploy_bigip.py`** — file-driven deploy for F5 BIG-IP appliances: uploads a licensed qcow, creates the VM with pinned machine type (`pc-i440fx-8.0`) and multi-NIC config, then drives first-boot via the Proxmox serial console (login + password change + mgmt IP/DNS/NTP + license activation via `tmsh`); registers DNS and adds to the `[BIGIPs]` Ansible inventory group
-- **`decomm_bigip.py`** — revoke the F5 license (`tmsh revoke sys license`) so the key returns to your pool, remove DNS, remove from inventory, then destroy the VM; aborts before destroy if revocation fails so the appliance is recoverable; supports `--force-decomm` to skip revoke when the VM is hung/unreachable
-- **`deploy.py`** — single-file or batch deploy (LXC / VM / BIG-IP) — auto-dispatches by `type` field. Single-file via `--deploy-file`; batch via `--batch` or `--batch-dir` with a live per-host status board, summary table, and idempotent re-run protection
-- **`decomm.py`** — single-file or batch decommission — auto-dispatches by `type` field. Sequential by default to avoid DNS race conditions; supports `--purge` (delete JSON) and `--force-decomm` (skip BIG-IP license revocation)
+- **`deploy.py`** — single-file or batch deploy (LXC / VM / BIG-IP) — auto-dispatches by `type` field. **This is the entry point for all BIG-IP deploys**, and the entry point for file-driven / batch LXC + VM deploys. Single-file via `--deploy-file`; batch via `--batch` or `--batch-dir` with a live per-host status board, summary table, and idempotent re-run protection
+- **`decomm.py`** — single-file or batch decommission — auto-dispatches by `type` field. **This is the entry point for all BIG-IP decomms.** Sequential by default to avoid DNS race conditions; supports `--purge` (delete JSON) and `--force-decomm` (skip BIG-IP license revocation)
+- **`deploy_bigip.py`** *(helper, called by `deploy.py`)* — file-driven implementation for F5 BIG-IP: uploads a licensed qcow, creates the VM with pinned machine type (`pc-i440fx-8.0`) and multi-NIC config, then drives first-boot via the Proxmox serial console (login + password change + mgmt IP/DNS/NTP + license activation via `tmsh`); registers DNS and adds to the `[BIGIPs]` Ansible inventory group. Not meant for direct invocation — use `deploy.py` instead.
+- **`decomm_bigip.py`** *(helper, called by `decomm.py`)* — revokes the F5 license (`tmsh revoke sys license`) so the key returns to your pool, removes DNS, removes from inventory, then destroys the VM; aborts before destroy if revocation fails so the appliance is recoverable; supports `--force-decomm` to skip revoke when the VM is hung/unreachable. Not meant for direct invocation — use `decomm.py` instead.
 - **`cleanup_tagged.py`** — scan the cluster for tagged resources and keep, promote, or decommission each one interactively or via a plan file
 - **`expire.py`** — manage deployment TTLs: check, reap expired hosts, or renew a deployment's TTL
 - **`draft-deployment.py`** — interactive wizard to build a deployment JSON file without deploying; runs the full LXC or VM wizard and saves the result for use with `deploy_lxc.py`, `deploy_vm.py`, or `deploy.py`
@@ -56,8 +56,8 @@ Poiesis/
 ├── decomm_lxc.py                  # LXC decommission script
 ├── deploy_vm.py                   # QEMU VM provisioning wizard
 ├── decomm_vm.py                   # QEMU VM decommission script
-├── deploy_bigip.py                # F5 BIG-IP file-driven deploy (qcow + serial-console firstboot + license activation)
-├── decomm_bigip.py                # F5 BIG-IP decommission (license revoke + DNS removal + destroy)
+├── deploy_bigip.py                # HELPER (called by deploy.py) — F5 BIG-IP qcow + serial-console firstboot + license activation
+├── decomm_bigip.py                # HELPER (called by decomm.py) — F5 BIG-IP license revoke + DNS removal + destroy
 ├── deploy.py                      # Single-file or batch deploy — auto-dispatches LXC / VM / BIG-IP by 'type' field
 ├── decomm.py                      # Single-file or batch decommission — auto-dispatches by 'type' field
 ├── cleanup_tagged.py              # Cluster-wide tag-based cleanup (keep/promote/decomm)
@@ -277,10 +277,8 @@ python3 deploy_vm.py
 python3 deploy_lxc.py --deploy-file deployments/lxc/myserver.json --silent
 python3 deploy_vm.py --deploy-file deployments/vms/myvm.json --silent
 
-# Deploy a BIG-IP appliance (file-driven only — stage qcow in appliance-images/ first)
-python3 deploy_bigip.py --deploy-file deployments/bigip/bigip-prod01.json
-
-# Or via the unified dispatcher (auto-detects LXC / VM / BIG-IP by 'type' field)
+# Deploy a BIG-IP appliance (stage qcow in appliance-images/ first — file-driven only)
+# Always use deploy.py for BIG-IPs; deploy_bigip.py is a helper called by the dispatcher.
 python3 deploy.py --deploy-file deployments/bigip/bigip-prod01.json
 
 # Check the deployment log after any interactive run
@@ -291,9 +289,10 @@ python3 decomm_lxc.py
 python3 decomm_vm.py
 
 # Decommission a BIG-IP (revokes F5 license before destroy — keeps the key reusable)
-python3 decomm_bigip.py --deploy-file deployments/bigip/bigip-prod01.json
+# Always use decomm.py for BIG-IPs; decomm_bigip.py is a helper called by the dispatcher.
+python3 decomm.py --deploy-file deployments/bigip/bigip-prod01.json
 # Or skip license revocation when the VM is hung/unreachable
-python3 decomm_bigip.py --deploy-file deployments/bigip/bigip-prod01.json --force-decomm
+python3 decomm.py --deploy-file deployments/bigip/bigip-prod01.json --force-decomm
 
 # Batch deploy multiple resources in parallel (up to 3 at a time by default)
 python3 deploy.py --batch deployments/lxc/web1.json deployments/lxc/db1.json
