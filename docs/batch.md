@@ -36,10 +36,12 @@ Both scripts auto-detect whether each file is an LXC or VM deployment from the J
 
 | Option | Description |
 |---|---|
-| `--batch FILE [FILE ...]` | One or more deployment JSON files to deploy (mutually exclusive with `--batch-dir`) |
+| `--deploy-file FILE` | Deploy a single JSON file. The dispatcher reads its `type` field (`lxc` / `vm` / `bigip`) and hands off to the matching type-specific script. Mutually exclusive with `--batch` / `--batch-dir`. |
+| `--batch FILE [FILE ...]` | One or more deployment JSON files to deploy (mutually exclusive with `--deploy-file` / `--batch-dir`) |
 | `--batch-dir DIR` | Deploy all `*.json` files in a directory alphabetically |
 | `--validate` | Validate all files and exit without deploying |
 | `--parallel N` | Max concurrent deployments (default: 3, use 1 for sequential) |
+| `--stagger SECS` | Seconds between each job start in parallel mode (default: 45, use 0 to disable). Spreads early-deploy load — Proxmox API requests, qcow uploads, cloud-init bursts — across time rather than firing all `--parallel` jobs at once. Ignored when `--parallel 1`. |
 | `--config FILE` | Alternate config file (default: `config.yaml` next to the script) |
 | `--yolo` | Skip preflight checks in each deploy script |
 | `--ttl DURATION` | Apply a TTL to all deployed resources (e.g. `7d`, `24h`) |
@@ -113,6 +115,8 @@ All 3 file(s): 1 invalid.
 
 Exits 0 if all files pass, 1 if any fail.
 
+Validation is purely local — it does not connect to Proxmox. It checks JSON shape, required fields, types, and value ranges. For BIG-IP deployments it also confirms that `qcow_filename` resolves to a real file (`.qcow2`) or its matching `.qcow2.zip` in `appliance-images/`, and lists what's staged when it doesn't.
+
 ### Idempotent Re-runs
 
 Before deploying each file, `deploy.py` fetches all currently running VMIDs from the cluster. If the VMID in a deployment file is already running, that file is skipped with a `skipped` status in the summary table. This makes batch re-runs safe — already-deployed resources are left alone.
@@ -152,11 +156,14 @@ python3 deploy.py --batch-dir deployments/lxc/ --parallel 1
 
 | Option | Description |
 |---|---|
-| `--batch FILE [FILE ...]` | One or more deployment JSON files to decommission |
+| `--deploy-file FILE` | Decommission a single JSON file. The dispatcher reads its `type` field (`lxc` / `vm` / `bigip`) and hands off to the matching type-specific script. Mutually exclusive with `--batch` / `--batch-dir`. |
+| `--batch FILE [FILE ...]` | One or more deployment JSON files to decommission (mutually exclusive with `--deploy-file` / `--batch-dir`) |
 | `--batch-dir DIR` | Decommission all `*.json` files in a directory alphabetically |
 | `--parallel N` | Max concurrent decomms (default: 1 — sequential) |
+| `--stagger SECS` | Seconds between each job start in parallel mode (default: 0). Only takes effect when `--parallel > 1`; ignored in sequential mode. |
 | `--config FILE` | Alternate config file |
 | `--purge` | Delete deployment JSON files after decommissioning |
+| `--force-decomm` | (BIG-IP only) Skip the F5 license-revocation step before destroying the VM. Pass through to `decomm_bigip.py`; ignored for LXC and VM files. Use only when the BIG-IP is hung/unreachable or the license is already revoked — the registration key will remain consumed in your F5 activation pool. |
 
 ### Why Sequential by Default
 

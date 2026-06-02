@@ -4,9 +4,12 @@
 
 ### About
 
-`decomm_lxc.py` and `decomm_vm.py` <u>**permanently**</u> destroy a Proxmox LXC container or QEMU VM and remove all associated records. Both scripts follow the same four-step process: destroy the resource in Proxmox, remove DNS records, remove from Ansible inventory, and handle the deployment JSON file.
+`decomm_lxc.py`, `decomm_vm.py`, and `decomm_bigip.py` <u>**permanently**</u> destroy a Proxmox LXC container, QEMU VM, or F5 BIG-IP appliance and remove all associated records.
 
-These scripts are the counterpart to `deploy_lxc.py` and `deploy_vm.py`.
+- `decomm_lxc.py` / `decomm_vm.py` follow the same four-step process: destroy the resource in Proxmox, remove DNS records, remove from Ansible inventory, and handle the deployment JSON file.
+- `decomm_bigip.py` adds a leading **license-revocation** step (`tmsh revoke sys license` via the serial console) before destroying the VM, so the F5 registration key returns to your activation pool. It has a slightly different CLI shape — see [`docs/deploy-bigip.md`](deploy-bigip.md#cli-options) for its full options table.
+
+These scripts are the counterpart to `deploy_lxc.py`, `deploy_vm.py`, and `deploy_bigip.py`. The unified [`decomm.py`](batch.md#decommpy) dispatcher routes single-file (`--deploy-file`) and batch (`--batch` / `--batch-dir`) invocations to the right type-specific script based on each JSON's `type` field.
 
 > **Note:** By design, and for safety, only resources that were deployed with a Poiesis deploy script (and have a corresponding deployment JSON file) can be decommissioned this way.
 
@@ -28,7 +31,7 @@ These scripts are the counterpart to `deploy_lxc.py` and `deploy_vm.py`.
 
 ## CLI Options
 
-Both `decomm_lxc.py` and `decomm_vm.py` support the same options:
+`decomm_lxc.py` and `decomm_vm.py` support the same options:
 
 | Option | Description |
 |---|---|
@@ -36,6 +39,9 @@ Both `decomm_lxc.py` and `decomm_vm.py` support the same options:
 | `--purge` | Also delete the local deployment JSON file after decommissioning |
 | `--silent` | Skip the confirmation challenge. Requires `--deploy-file`. |
 | `--config FILE` | Use an alternate config file instead of the default `config.yaml` in the project root |
+| `--help`, `--?` | Show help and exit |
+
+`decomm_bigip.py` shares the same `--purge`, `--silent`, `--config`, and `--help` semantics, but **`--deploy-file` is required** (there is no interactive list) and it adds **`--force-decomm`** to skip license revocation when the VM is hung/unreachable. Full table: [`docs/deploy-bigip.md` → CLI Options](deploy-bigip.md#cli-options).
 
 ---
 

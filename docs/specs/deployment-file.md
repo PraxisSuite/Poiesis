@@ -202,7 +202,7 @@ BIG-IP-specific fields:
 | Field | Required | Default | Description |
 |---|---|---|---|
 | `type` | ✓ | — | Must be `"bigip"`. Distinguishes BIG-IP files from VM/LXC when batch-dispatched. |
-| `qcow_filename` | ✓ | — | Filename of the qcow inside `appliance-images/`. Can name a `.qcow2` or `.qcow2.zip` — a zip is auto-extracted before deploy (and the zip deleted on success). Glob is `BIGIP*.qcow2` / `BIGIP*.qcow2.zip`. |
+| `qcow_filename` | ✓ | — | Filename of the qcow inside `appliance-images/`. Can name a `.qcow2` or `.qcow2.zip` — a zip is auto-extracted before deploy (and the zip deleted on success). Glob is `BIGIP*.qcow2` / `BIGIP*.qcow2.zip`. `--validate` confirms the file (or its matching `.zip`) is actually staged and lists what's available if not. |
 | `machine_type` | optional | `pc-i440fx-8.0` | Proxmox machine type. **F5 requires `pc-i440fx-8.0` on Proxmox.** Override at your own risk; a warning is emitted if you pick something else. |
 | `bios` | optional | `seabios` | BIOS for the VM. |
 | `scsi_controller` | optional | `virtio-scsi-pci` | SCSI controller model. |
