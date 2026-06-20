@@ -50,6 +50,7 @@ from modules.validation import (
     dry_run_validate_and_load,
     node_passes_filter,
     check_vlan_exists,
+    check_node_cpu_baseline,
     validate_lxc_deployment,
     validate_vm_deployment,
     validate_bigip_deployment,

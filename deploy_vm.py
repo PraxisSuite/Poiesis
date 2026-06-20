@@ -111,6 +111,7 @@ from modules.lib import (
     prompt_node_selection,
     write_history,
     check_vlan_exists,
+    check_node_cpu_baseline,
     resolve_tag_colors,
     apply_tag_colors,
     add_common_deploy_args,
@@ -530,13 +531,16 @@ def main() -> None:
     ram_threshold = float(defaults.get("ram_threshold", 0.95))
     firewall_enabled = 1 if defaults.get("firewall_enabled", False) else 0
     vm_cfg = cfg.get("vm", {})
-    cpu_type = vm_cfg.get("cpu_type", "x86-64-v2-AES")
     machine  = vm_cfg.get("machine",  "q35")
     bios     = vm_cfg.get("bios",     "seabios")
     scsihw   = vm_cfg.get("storage_controller", "virtio-scsi-pci")
     nic_driver = vm_cfg.get("nic_driver", "virtio")
 
     deploy = load_deployment_file(args.deploy_file) if args.deploy_file else {}
+    # cpu_type: per-deployment override wins; otherwise fall back to vm config default.
+    # RHEL 10 family (Rocky 10, Alma 10, CentOS Stream 10) requires x86-64-v3, which
+    # not every Proxmox node supports — see check_node_cpu_baseline below.
+    cpu_type = deploy.get("cpu_type") or vm_cfg.get("cpu_type", "x86-64-v2-AES")
     silent = args.silent
 
     console.print()
@@ -773,6 +777,11 @@ def main() -> None:
     # ── VLAN existence check ──
     check_vlan_exists(proxmox, node_name, bridge, vlan_str, silent=silent)
 
+    # ── CPU baseline check ──
+    # Hard error if the chosen node can't run the requested cpu_type — avoids
+    # a 10-minute first-boot wait that ends in a kernel-panic reboot loop.
+    check_node_cpu_baseline(proxmox, node_name, cpu_type, silent=silent)
+
     # ═══════════════════════════════════════════
     # Step 1/6: Create VM
     # ═══════════════════════════════════════════
@@ -889,10 +898,10 @@ def main() -> None:
     # ═══════════════════════════════════════════
     if use_dhcp:
         console.print("[bold green]─── Step 4/7: Discovering DHCP IP via guest agent ───[/bold green]")
-        console.print("  [dim](cloud-init installs qemu-guest-agent during first boot — this may take 2–4 min)[/dim]")
+        console.print("  [dim](cloud-init installs qemu-guest-agent during first boot — Ubuntu/Debian/Fedora typically resolve in 2–4 min; Rocky/Alma can take longer if a first-boot dnf upgrade is in progress)[/dim]")
         try:
-            with console.status("[bold green]Waiting for guest agent to report IP (up to 5 min)..."):
-                vm_ip = wait_for_guest_agent_ip(proxmox, node_name, next_vmid, timeout=300)
+            with console.status("[bold green]Waiting for guest agent to report IP (up to 10 min)..."):
+                vm_ip = wait_for_guest_agent_ip(proxmox, node_name, next_vmid, timeout=600)
             console.print(f"[green]✓ DHCP assigned IP: [bold]{vm_ip}[/bold][/green]")
         except TimeoutError as e:
             console.print(f"[red]✗ {e}[/red]")

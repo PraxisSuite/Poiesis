@@ -1,0 +1,29 @@
+{
+  "type": "bigip",
+  "hostname": "bigip-example",
+  "fqdn": "bigip-example.example.com",
+  "node": "proxmox01",
+  "vmid": null,
+  "qcow_filename": "BIGIP-17.5.0-0.0.13.ALL-scsi.qcow2",
+  "machine_type": "pc-i440fx-8.0",
+  "bios": "seabios",
+  "scsi_controller": "virtio-scsi-pci",
+  "cpus": 4,
+  "memory_gb": 16.0,
+  "disk_gb": 82,
+  "storage": "local-lvm",
+  "password": "CHANGE_ME_BEFORE_DEPLOY",
+  "mgmt_ip": "10.0.0.40",
+  "mgmt_prefix_len": 24,
+  "mgmt_gateway": "10.0.0.1",
+  "mgmt_dns": "10.0.0.2 10.0.0.3",
+  "registration_key": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXXXX",
+  "nics": [
+    {"bridge": "vmbr0", "vlan": 100, "model": "vmxnet3"},
+    {"bridge": "vmbr0", "vlan": 200, "model": "vmxnet3"},
+    {"bridge": "vmbr0", "vlan": 300, "model": "vmxnet3"},
+    {"bridge": "vmbr0", "vlan": 220, "model": "vmxnet3"},
+    {"bridge": "vmbr1", "model": "vmxnet3"}
+  ],
+  "preflight": true
+}

@@ -224,6 +224,70 @@ def node_passes_filter(n: dict, memory_mb: int, cpu_threshold: float = 0.85,
     return True
 
 
+def _required_flags_for_cpu_type(cpu_type: str) -> list[str]:
+    """CPU /proc/cpuinfo flag names required for a given QEMU `-cpu` model.
+
+    Returns [] when we can't statically determine the requirement (e.g. `host`,
+    a specific CPU model like `Haswell`, custom names) — skip the check rather
+    than guess wrong.
+    """
+    if not cpu_type:
+        return []
+    ct = cpu_type.lower()
+    # Note: the LZCNT instruction is exposed as `abm` (AMD's name —
+    # "Advanced Bit Manipulation") in Linux /proc/cpuinfo for both Intel and
+    # AMD CPUs — not as `lzcnt`. Proxmox's `cpuinfo.flags` API mirrors that.
+    if ct.startswith("x86-64-v4"):
+        return ["avx2", "bmi1", "bmi2", "fma", "avx512f"]
+    if ct.startswith("x86-64-v3"):
+        return ["avx2", "bmi1", "bmi2", "fma", "movbe", "abm"]
+    if ct.startswith("x86-64-v2-aes"):
+        return ["aes", "sse4_2", "popcnt"]
+    if ct.startswith("x86-64-v2"):
+        return ["sse4_2", "popcnt"]
+    return []
+
+
+def check_node_cpu_baseline(proxmox, node: str, cpu_type: str,
+                            silent: bool = False) -> None:
+    """Verify the target node's CPU supports the requested QEMU cpu_type baseline.
+
+    Hard error if not — a VM started with an unsupported `-cpu` on a host that
+    lacks the required instructions will reboot-loop on illegal-instruction
+    faults at kernel boot. Confirmed cause for RHEL 10 family (Rocky 10, Alma
+    10, CentOS Stream 10) on pre-Haswell Xeons (Sandy/Ivy Bridge).
+
+    For cpu_type values we don't have a static flag map for (e.g. `host`,
+    `Haswell`, custom names), this check is skipped silently — the operator is
+    presumed to know what they're requesting.
+    """
+    required = _required_flags_for_cpu_type(cpu_type)
+    if not required:
+        return
+    try:
+        status = proxmox.nodes(node).status.get()
+        flags_str = status.get("cpuinfo", {}).get("flags", "") or ""
+        node_model = status.get("cpuinfo", {}).get("model", "?")
+    except Exception:
+        console.print(f"  [dim]CPU baseline check skipped (could not query {node} status)[/dim]")
+        return
+
+    flags = set(flags_str.split()) if isinstance(flags_str, str) else set()
+    missing = [f for f in required if f not in flags]
+    if not missing:
+        console.print(f"  [green]✓ Node {node} CPU supports {cpu_type}[/green]")
+        return
+
+    console.print(
+        f"  [red]✗ Node {node} cannot run cpu={cpu_type}: "
+        f"CPU is missing flag(s) {', '.join(missing)}[/red]\n"
+        f"  [yellow]CPU on {node}: {node_model}[/yellow]\n"
+        f"  [dim]Choose a different node, or set a lower `cpu_type` in the "
+        f"deployment file (e.g. \"cpu_type\": \"x86-64-v2-AES\").[/dim]"
+    )
+    sys.exit(1)
+
+
 def check_vlan_exists(proxmox, node: str, bridge: str, vlan: int | str,
                       silent: bool = False) -> None:
     """Verify that the requested VLAN is reachable on the target node before deploying.

@@ -80,19 +80,23 @@
         name: openssh-server
         state: present
 
-    - name: Allow root login via password in sshd_config
-      lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^#?PermitRootLogin'
-        line: 'PermitRootLogin yes'
-        backup: true
+    - name: Ensure sshd_config.d drop-in directory exists
+      file:
+        path: /etc/ssh/sshd_config.d
+        state: directory
+        mode: '0755'
 
-    - name: Allow password authentication in sshd_config
-      lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^#?PasswordAuthentication'
-        line: 'PasswordAuthentication yes'
-        backup: true
+    - name: Write Poiesis sshd drop-in (root login + password auth)
+      copy:
+        dest: /etc/ssh/sshd_config.d/00-poiesis.conf
+        content: |
+          # Managed by Poiesis post-deploy.
+          # Low-numbered drop-in so these settings take precedence over
+          # any later cloud-image-shipped drop-ins (e.g. Ubuntu cloud's
+          # 60-cloudimg-settings.conf which sets PasswordAuthentication no).
+          PermitRootLogin yes
+          PasswordAuthentication yes
+        mode: '0644'
 
     - name: Restart SSH service to apply changes
       service:

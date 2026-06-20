@@ -3,6 +3,33 @@
   dnf:
     name: epel-release
     state: present
+  when: ansible_distribution != 'Fedora'
+
+# CRB (CodeReady Builder, called PowerTools on RHEL 8) holds the python3-pathspec,
+# python3-setuptools-wheel, python3-wheel-wheel etc. that many EPEL packages
+# transitively depend on (yamllint, python3-virtualenv on RHEL 10, ...).
+# AlmaLinux and CentOS Stream enable CRB by default; Rocky doesn't. Enable it
+# unconditionally on RHEL-family non-Fedora — it's a no-op on systems that
+# already have it on.
+- name: Ensure dnf-plugins-core (provides config-manager) is installed
+  dnf:
+    name: dnf-plugins-core
+    state: present
+  when: ansible_distribution != 'Fedora'
+
+- name: Enable CRB repo (RHEL 9+ / Alma / Rocky / CentOS Stream)
+  command: dnf config-manager --set-enabled crb
+  register: crb_enable
+  changed_when: "'enabled' in crb_enable.stdout|lower or crb_enable.rc == 0"
+  failed_when: false
+  when: ansible_distribution != 'Fedora' and ansible_distribution_major_version|int >= 9
+
+- name: Enable PowerTools repo (RHEL 8 only)
+  command: dnf config-manager --set-enabled powertools
+  register: pt_enable
+  changed_when: "'enabled' in pt_enable.stdout|lower or pt_enable.rc == 0"
+  failed_when: false
+  when: ansible_distribution != 'Fedora' and ansible_distribution_major_version|int == 8
 
 - name: Update dnf cache
   dnf:

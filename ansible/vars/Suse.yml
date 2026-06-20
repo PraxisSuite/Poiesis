@@ -14,7 +14,8 @@ packages:
   # --- Network tools ---
   - net-tools          # ifconfig, netstat, route, arp
   - iproute2           # ip addr, ip route, ss, tc
-  - nmap               # port scanner
+  # nmap removed — not in repo-oss on Leap 16; install from
+  # network:utilities OBS repo manually if needed.
   - iputils            # ping, arping
   - traceroute
   - mtr                # combined ping+traceroute
@@ -37,8 +38,8 @@ packages:
 
   # --- Data/JSON/YAML tools ---
   - jq                 # JSON processor
-  - python3-yamllint   # YAML linter
-  - python3-jsonschema # JSON schema validation
+  # python3-yamllint, python3-jsonschema removed — not packaged in repo-oss
+  # on Leap 16. Install via `pip install yamllint jsonschema` if needed.
 
   # --- Shell/script linting ---
   - ShellCheck
@@ -81,7 +82,8 @@ packages:
   - lsof
   - strace
   - sysstat            # sar, iostat, mpstat
-  - dstat
+  # dstat (and replacement dool) removed — neither is in repo-oss on Leap 16.
+  # sar/iostat from sysstat cover most of dstat's use cases.
 
   # --- Development / misc ---
   - git
@@ -97,7 +99,8 @@ packages:
   # --- Python ---
   - python3
   - python3-pip
-  - python3-virtualenv
+  # python3-virtualenv removed — not in repo-oss on Leap 16; use
+  # `python3 -m venv` or `pip install virtualenv` instead.
 
   # --- Misc useful ---
   - bc

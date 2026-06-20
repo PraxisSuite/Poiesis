@@ -43,6 +43,10 @@
 cloud_images:
 
   # ── Ubuntu ──────────────────────────────────────────────
+  - name: "Ubuntu 26.04 LTS (Resolute Raccoon)"
+    url: "https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-amd64.img"
+    filename: "resolute-server-cloudimg-amd64.img"
+
   - name: "Ubuntu 24.04 LTS (Noble Numbat)"
     url: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
     filename: "noble-server-cloudimg-amd64.img"
@@ -56,6 +60,10 @@ cloud_images:
     filename: "focal-server-cloudimg-amd64.img"
 
   # ── Debian ──────────────────────────────────────────────
+  - name: "Debian 13 (Trixie)"
+    url: "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2"
+    filename: "debian-13-generic-amd64.qcow2"
+
   - name: "Debian 12 (Bookworm)"
     url: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
     filename: "debian-12-generic-amd64.qcow2"
@@ -65,6 +73,10 @@ cloud_images:
     filename: "debian-11-generic-amd64.qcow2"
 
   # ── RHEL-compatible ─────────────────────────────────────
+  - name: "Rocky Linux 10"
+    url: "https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud.latest.x86_64.qcow2"
+    filename: "Rocky-10-GenericCloud.latest.x86_64.qcow2"
+
   - name: "Rocky Linux 9"
     url: "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2"
     filename: "Rocky-9-GenericCloud.latest.x86_64.qcow2"
@@ -72,6 +84,10 @@ cloud_images:
   - name: "Rocky Linux 8"
     url: "https://dl.rockylinux.org/pub/rocky/8/images/x86_64/Rocky-8-GenericCloud.latest.x86_64.qcow2"
     filename: "Rocky-8-GenericCloud.latest.x86_64.qcow2"
+
+  - name: "AlmaLinux 10"
+    url: "https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/AlmaLinux-10-GenericCloud-latest.x86_64.qcow2"
+    filename: "AlmaLinux-10-GenericCloud-latest.x86_64.qcow2"
 
   - name: "AlmaLinux 9"
     url: "https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2"
@@ -92,26 +108,30 @@ cloud_images:
   # NOTE: Oracle Linux cloud image URLs are version-specific (no "latest" redirect).
   # Check https://yum.oracle.com/oracle-linux-templates.html for current build URLs.
   - name: "Oracle Linux 9"
-    url: "https://yum.oracle.com/templates/OracleLinux/OL9/u4/x86_64/OL9U4_x86_64-kvm-b234.qcow2"
-    filename: "OL9U4_x86_64-kvm-b234.qcow2"
+    url: "https://yum.oracle.com/templates/OracleLinux/OL9/u7/x86_64/OL9U7_x86_64-kvm-b289.qcow2"
+    filename: "OL9U7_x86_64-kvm-b289.qcow2"
 
   - name: "Oracle Linux 8"
-    url: "https://yum.oracle.com/templates/OracleLinux/OL8/u9/x86_64/OL8U9_x86_64-kvm-b234.qcow2"
-    filename: "OL8U9_x86_64-kvm-b234.qcow2"
+    url: "https://yum.oracle.com/templates/OracleLinux/OL8/u10/x86_64/OL8U10_x86_64-kvm-b287.qcow2"
+    filename: "OL8U10_x86_64-kvm-b287.qcow2"
 
   # ── Fedora ──────────────────────────────────────────────
   # NOTE: Fedora cloud image URLs are version-specific (no "latest" redirect).
   # Check https://fedoraproject.org/cloud/download for the current build URL.
-  - name: "Fedora 41 (Cloud Base)"
-    url: "https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2"
-    filename: "Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2"
+  - name: "Fedora 44 (Cloud Base)"
+    url: "https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2"
+    filename: "Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2"
+
+  - name: "Fedora 43 (Cloud Base)"
+    url: "https://download.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2"
+    filename: "Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2"
 
   # ── openSUSE ─────────────────────────────────────────────
   # NOTE: openSUSE image filenames change between point releases.
   # Check https://get.opensuse.org/leap/ for the current Leap URL.
-  - name: "openSUSE Leap 15.6"
-    url: "https://download.opensuse.org/distribution/leap/15.6/appliances/openSUSE-Leap-15.6-Minimal-VM.x86_64-Cloud.qcow2"
-    filename: "openSUSE-Leap-15.6-Minimal-VM.x86_64-Cloud.qcow2"
+  - name: "openSUSE Leap 16.0"
+    url: "https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.x86_64-Cloud.qcow2"
+    filename: "Leap-16.0-Minimal-VM.x86_64-Cloud.qcow2"
 
   # NOTE: Tumbleweed is a rolling release — the filename may change with each snapshot.
   # Check https://get.opensuse.org/tumbleweed/ for the current URL.
@@ -122,6 +142,10 @@ cloud_images:
   # ── Alpine Linux ─────────────────────────────────────────
   # NOTE: Alpine cloud image URLs are version-specific (no "latest" redirect).
   # Check https://alpinelinux.org/cloud/ for the current release and exact filename.
+  - name: "Alpine Linux 3.24"
+    url: "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/cloud/generic_alpine-3.24.1-x86_64-bios-cloudinit-r0.qcow2"
+    filename: "generic_alpine-3.24.1-x86_64-bios-cloudinit-r0.qcow2"
+
   - name: "Alpine Linux 3.21"
     url: "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/cloud/generic_alpine-3.21.0-x86_64-bios-cloudinit-r0.qcow2"
     filename: "generic_alpine-3.21.0-x86_64-bios-cloudinit-r0.qcow2"
@@ -140,6 +164,10 @@ cloud_images:
   # Decompress with `xz -d <file>` before importing, or check if your Proxmox version
   # supports direct .xz import. Check https://download.freebsd.org/releases/VM-IMAGES/
   # for the current release and exact filename.
+  - name: "FreeBSD 15 (UFS)"
+    url: "https://download.freebsd.org/releases/VM-IMAGES/15.0-RELEASE/amd64/Latest/FreeBSD-15.0-RELEASE-amd64-ufs.qcow2.xz"
+    filename: "FreeBSD-15.0-RELEASE-amd64-ufs.qcow2.xz"
+
   - name: "FreeBSD 14 (UFS)"
-    url: "https://download.freebsd.org/releases/VM-IMAGES/14.2-RELEASE/amd64/Latest/FreeBSD-14.2-RELEASE-amd64.qcow2.xz"
-    filename: "FreeBSD-14.2-RELEASE-amd64.qcow2.xz"
+    url: "https://download.freebsd.org/releases/VM-IMAGES/14.4-RELEASE/amd64/Latest/FreeBSD-14.4-RELEASE-amd64.qcow2.xz"
+    filename: "FreeBSD-14.4-RELEASE-amd64.qcow2.xz"

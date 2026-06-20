@@ -25,7 +25,8 @@ packages:
   - tcpdump            # packet capture
   - iperf3             # network bandwidth testing (EPEL)
   - fping              # fast parallel ping (EPEL)
-  - arp-scan           # ARP scanner (EPEL)
+  # arp-scan removed — not packaged in EPEL 10 anymore (gone in RHEL 10
+  # family). Install manually or `pip install scapy` for similar capability.
   - ethtool            # ethernet settings
   - iftop              # live bandwidth monitor (EPEL)
   - nload              # network load monitor (EPEL)
@@ -34,7 +35,7 @@ packages:
 
   # --- Text editors ---
   - nano
-  - vim
+  - vim-enhanced       # `vim` was renamed to `vim-enhanced` in RHEL 10 family
 
   # --- Data/JSON/YAML tools ---
   - jq                 # JSON processor (EPEL)
@@ -51,7 +52,7 @@ packages:
   - gzip
   - bzip2
   - xz
-  - p7zip              # 7z (EPEL)
+  - 7zip               # 7z (EPEL) — was `p7zip` on RHEL 8/9, renamed to `7zip` on RHEL 10
 
   # --- SSH tools ---
   - sshpass            # non-interactive SSH password auth (EPEL)
@@ -78,7 +79,7 @@ packages:
 
   # --- System monitoring & process tools ---
   - htop               # EPEL
-  - iotop
+  - iotop-c            # iotop was rewritten in C; `iotop-c` is the only package on RHEL 10
   - lsof
   - strace
   - sysstat            # sar, iostat, mpstat
