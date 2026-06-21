@@ -765,6 +765,8 @@ discovered and loaded automatically.
 
 Supports `--lxc` / `--vm` flags, `--deploy-file` to edit an existing draft, `--ttl` for expiry planning, and full back-navigation through every wizard step.
 
+**Extended 2026-06-20:** the wizard now also asks (a) `How many of these to create?` for batch generation with auto-incremented hostnames + static IPs, (b) `Save draft(s) to directory:` to override the default location, and (c) `Create another draft?` after each save to start a fresh wizard pass with every answer pre-filled from the just-saved file (change only what differs).
+
 ---
 
 ## Post-Deploy Hook Scripts — Plugins and Extensibility
