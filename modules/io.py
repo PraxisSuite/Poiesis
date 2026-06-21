@@ -52,13 +52,20 @@ def list_deployment_files(kind: str) -> list[Path]:
     return sorted(deployments_dir.glob("*.json"))
 
 
-def write_deployment_file(data: dict, hostname: str, kind: str, cfg: dict) -> Path:
-    """Write deployment JSON to deployments/{kind}/{hostname}.json. Returns path.
+def write_deployment_file(data: dict, hostname: str, kind: str, cfg: dict,
+                          save_dir: Path | None = None) -> Path:
+    """Write deployment JSON to {save_dir}/{hostname}.json. Returns path.
 
-    kind: 'lxc' or 'vms' (directory name under deployments/).
+    kind: 'lxc' or 'vms' (directory name under deployments/ — used as the default
+    save_dir when none is provided, and for caller-facing context).
+
+    save_dir: Optional override. If absent, defaults to deployments/{kind}/ under
+    the project root (the historical behavior). Used by the draft builder to let
+    users save batches outside the project tree.
+
     Caller assembles the full data dict including all fields.
     """
-    deployments_dir = _ROOT / "deployments" / kind
+    deployments_dir = save_dir if save_dir is not None else _ROOT / "deployments" / kind
     deployments_dir.mkdir(parents=True, exist_ok=True)
     deploy_file = deployments_dir / f"{hostname}.json"
     with open(deploy_file, "w") as f:

@@ -41,6 +41,17 @@ The following checks are run at the start of every deployment. Checks that depen
 | Inventory server reachable | Warning | TCP connect to port 22 on the `server` (under `ansible_inventory:`). Skipped if `enabled` is `false` under `ansible_inventory:`. |
 | Inventory SSH auth | Warning | Key-based SSH to the inventory server succeeds |
 
+### Additional per-deployment checks (run at deploy time, not by `--preflight`)
+
+These checks run automatically at the start of every interactive or silent deployment but **don't** appear in the standalone `--preflight` table because they depend on the chosen node and resource type:
+
+| Check | Fatal? | Where documented |
+|---|---|---|
+| VLAN exists on target node | Warning | [deploy-vm.md → VLAN Check Behavior](deploy-vm.md#vlan-check-behavior), [deploy-lxc.md](deploy-lxc.md) |
+| CPU baseline supports `cpu_type` | **Fatal** | [deploy-vm.md → CPU Baseline Check](deploy-vm.md#cpu-baseline-check-rhel-10-family) — verifies the host has every flag the requested QEMU `-cpu` model needs (catches RHEL-10-family-on-pre-Haswell mismatches before any SFTP upload) |
+| Bridges exist on target node (BIG-IP) | **Fatal** | [deploy-bigip.md](deploy-bigip.md) |
+| Appliance image staged (BIG-IP) | **Fatal** | [deploy-bigip.md](deploy-bigip.md) |
+
 ---
 
 ## What the Output Looks Like

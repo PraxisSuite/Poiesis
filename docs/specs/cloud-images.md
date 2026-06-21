@@ -65,6 +65,13 @@ cloud-init for first-boot configuration. Installer ISOs will not work.
 **FreeBSD note:** Ships as `.qcow2.xz` (compressed). Must be decompressed with `xz -d`
 before Proxmox import, or check if your Proxmox version supports direct `.xz` import.
 
+**RHEL 10 family note (Rocky 10, AlmaLinux 10, CentOS Stream 10):** Red Hat raised
+the baseline microarchitecture to `x86-64-v3` (Haswell-era). Cloud-init starts and the
+disk imports fine on any Proxmox host, but the kernel will boot-loop on pre-Haswell CPUs
+(Sandy/Ivy Bridge Xeons, older Atoms). When deploying these images, set
+`"cpu_type": "x86-64-v3"` in the deployment JSON — see
+[deploy-vm.md → CPU Baseline Check](../deploy-vm.md#cpu-baseline-check-rhel-10-family).
+
 ---
 
 ## Storage Location on Proxmox Nodes

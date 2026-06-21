@@ -11,6 +11,8 @@ Use it to:
 - Build a deployment file to hand off to `deploy.py` for batch execution
 - Edit an existing deployment file interactively without redeploying
 - Pre-build files for environments where interactive deployment isn't practical
+- **Generate a whole batch of similar deployment files in one wizard run** (e.g. `web01`–`web10` with auto-incremented IPs)
+- **Build multiple drafts in sequence, keeping every answer the same except the few that change** (the "do another?" loop)
 
 ## Table of Contents
 
@@ -22,6 +24,9 @@ Use it to:
 - [Wizard Navigation](#wizard-navigation)
 - [Walkthrough: LXC Prompt Order](#walkthrough-lxc-prompt-order)
 - [Walkthrough: VM Prompt Order](#walkthrough-vm-prompt-order)
+- [Save Location](#save-location)
+- [Generating a Batch (count > 1)](#generating-a-batch-count--1)
+- [Looping with Sticky Answers](#looping-with-sticky-answers)
 - [Output File](#output-file)
 - [Deploying from a Draft](#deploying-from-a-draft)
 - [Example Scenarios](#example-scenarios)
@@ -133,7 +138,10 @@ Going back restores the value you previously entered for that step. ESC at the f
 13. **Node** — Proxmox node to target; shows CPU and RAM usage to aid selection
 14. **OS template** — select from downloaded templates or download a new one from the Proxmox repo
 15. **Storage pool** — where the container root disk lives
-16. **Confirm** — shows a full summary and asks `Save draft deployment file?`
+16. **Summary table + count** — shows a full summary, then asks `How many of these to create?` ([details](#generating-a-batch-count--1))
+17. **Save location** — `Save draft(s) to directory:` with `deployments/lxc/` pre-filled ([details](#save-location))
+18. **Confirm** — final `Save N draft deployment file(s)?` prompt
+19. **Loop** — after saving, asks `Create another draft (keeps all answers — change only what differs)?` ([details](#looping-with-sticky-answers))
 
 ---
 
@@ -153,18 +161,86 @@ Going back restores the value you previously entered for that step. ESC at the f
 12. **Node** — Proxmox node to target
 13. **Cloud image** — two-level browser: storage → image file; download from catalog if needed
 14. **Storage pool** — where the VM disk lives
-15. **Confirm** — shows a full summary and asks `Save draft deployment file?`
+15. **Summary table + count** — shows a full summary, then asks `How many of these to create?` ([details](#generating-a-batch-count--1))
+16. **Save location** — `Save draft(s) to directory:` with `deployments/vms/` pre-filled ([details](#save-location))
+17. **Confirm** — final `Save N draft deployment file(s)?` prompt
+18. **Loop** — after saving, asks `Create another draft (keeps all answers — change only what differs)?` ([details](#looping-with-sticky-answers))
+
+---
+
+## Save Location
+
+After the summary table, the wizard prompts for a save directory:
+
+```
+? Save draft(s) to directory: deployments/lxc/
+```
+
+Press **Enter** to accept the default (`deployments/lxc/` or `deployments/vms/` depending on type), or type any other path:
+
+- Absolute: `/srv/poiesis-drafts/`
+- Relative: `../shared-drafts/`
+- Home-relative: `~/staging-files/`
+
+The directory is created if it doesn't exist. The deploy wizards (`deploy_lxc.py`, `deploy_vm.py`, `deploy.py --batch`) accept files at any path via `--deploy-file`, so drafts stored outside `deployments/` work identically.
+
+---
+
+## Generating a Batch (count > 1)
+
+The wizard ends with `How many of these to create?` (default `1`). Pass any integer ≥ 1:
+
+```
+? How many of these to create? 5
+```
+
+When the count is > 1, the wizard writes N files with auto-incremented hostnames (and auto-incremented static IPs when applicable):
+
+**Hostname numbering:**
+- Hostname ending in digits — those digits become the starting number, padded to its original width. Example: `web03` + count `4` → `web03`, `web04`, `web05`, `web06`.
+- Hostname with no trailing digits — `01` is appended and increments. Example: `webserver` + count `3` → `webserver01`, `webserver02`, `webserver03`.
+
+**IP numbering:**
+- **Static IP** — the last octet auto-increments. Example: `10.20.20.50` + count `3` → `.50`, `.51`, `.52`. The prefix length and gateway are copied unchanged to every file.
+- **DHCP** — every file gets `"ip_address": "dhcp"`. The DHCP server handles uniqueness at deploy time.
+
+**Caveats:**
+- The wizard does **not** check for hostname or IP collisions with already-existing deployment files. Pick a starting hostname/IP that leaves enough room.
+- Static IPs wrap across octet boundaries if you ask for more than 255 minus the starting octet — sensible behavior for a /16 or larger, but unusual for a single /24.
+- All other fields (CPU, RAM, disk, node, template/image, password, profile, tags, TTL) are identical across every generated file. Use the [sticky-answers loop](#looping-with-sticky-answers) instead if you need slight per-file variations.
+
+After saving, the wizard prints the `deploy.py --batch` command pre-populated with every generated file so you can copy-paste straight into a batch deploy.
+
+---
+
+## Looping with Sticky Answers
+
+After the wizard saves a draft (or batch of drafts), it asks:
+
+```
+? Create another draft (keeps all answers — change only what differs)? (y/N)
+```
+
+Answer **Yes** to start the wizard again with the most-recently-saved file as the new seed. Every prompt's default is the previous answer, so you press **Enter** to keep anything that stays the same and only type values that actually change.
+
+Typical usage: build one detailed reference draft, then loop and just bump the hostname and IP for each variant.
+
+Answer **No** (or just press Enter) to exit.
+
+The loop pairs naturally with `--deploy-file` — if you start the session with `--deploy-file <existing.json>` as the seed, the first wizard run pre-fills from that file, and every subsequent loop iteration carries those answers forward.
 
 ---
 
 ## Output File
 
-The wizard saves to:
+By default the wizard saves to:
 
 ```
 deployments/lxc/<hostname>.json   # for LXC containers
 deployments/vms/<hostname>.json   # for VMs
 ```
+
+Override the location at the `Save draft(s) to directory:` prompt — see [Save Location](#save-location) above.
 
 The file does **not** include `vmid` or `deployed_at` — those are assigned and recorded at actual deploy time. All other fields needed for a full deployment are present.
 
@@ -237,4 +313,30 @@ python3 deploy.py --batch \
   deployments/lxc/web2.json \
   deployments/vms/db1.json \
   --parallel 3
+```
+
+**Generate ten near-identical web servers in one wizard pass:**
+```bash
+python3 draft-deployment.py --lxc
+# At hostname prompt: web01
+# At static IP prompt: 10.20.20.50  (or leave blank for DHCP)
+# At "How many of these to create?": 10
+# Writes web01.json through web10.json with IPs .50 through .59
+# Prints: python3 deploy.py --batch deployments/lxc/web01.json …
+```
+
+**Build a batch, then a similar-but-different second batch in the same session:**
+```bash
+python3 draft-deployment.py --lxc
+# Build 5 web servers
+# Say YES to "Create another draft?"
+# Change hostname to db01 and storage profile to "database", keep everything else
+# Set count to 2
+# Result: 5 web servers + 2 database servers, 7 files total
+```
+
+**Save drafts to a shared location for hand-off:**
+```bash
+python3 draft-deployment.py --vm
+# When prompted: Save draft(s) to directory: /mnt/team-share/staging/
 ```

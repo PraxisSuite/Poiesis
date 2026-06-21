@@ -19,6 +19,7 @@ The wizard can be driven entirely interactively, pre-filled from a deployment JS
 - [Dry-Run Mode](#dry-run-mode)
 - [TTL / Expiry](#ttl--expiry)
 - [VLAN Check Behavior](#vlan-check-behavior)
+- [CPU Baseline Check (RHEL 10 family)](#cpu-baseline-check-rhel-10-family)
 - [Preflight Behavior](#preflight-behavior)
 - [Walkthrough: VM Prompt Order](#walkthrough-vm-prompt-order)
 - [The 7 VM Deployment Steps](#the-7-vm-deployment-steps)
@@ -161,6 +162,41 @@ See [expiry.md](expiry.md) for the full TTL management workflow.
 Before creating the VM, the script verifies that the requested VLAN exists on the target node. For traditional VLAN bridges, it looks for a `vmbr0.220`-style interface in the node's network list. For VLAN-aware bridges, the check passes for any VLAN tag — the bridge accepts all tags and relies on upstream switch configuration to enforce VLAN membership.
 
 > **Note:** If your VM gets an IP but it is on the wrong network, verify the VLAN is trunked on the physical port connected to the Proxmox node. The VLAN check cannot detect upstream switch misconfigurations.
+
+---
+
+## CPU Baseline Check (RHEL 10 family)
+
+Immediately after the VLAN check, `deploy_vm.py` verifies that the target node's CPU supports every instruction set required by the requested `cpu_type` model.
+
+**Why this matters:** Red Hat raised the baseline microarchitecture for RHEL 10 to **`x86-64-v3`** (Haswell-era — requires AVX2, BMI1/2, FMA, MOVBE, LZCNT). Rocky 10, AlmaLinux 10, and CentOS Stream 10 inherit that requirement. Deploying one of these cloud images to a Proxmox node with a pre-Haswell CPU (Sandy/Ivy Bridge Xeons, older Atoms, etc.) produces a kernel that hits an illegal-instruction fault during boot, causing the VM to reboot-loop indefinitely — the symptoms look like a network problem, but it's a CPU compatibility issue. See [BUG-006 in known-bugs.md](../known-bugs.md) for the full diagnosis story.
+
+**How to use it:**
+
+For RHEL-10-family deploys, set `cpu_type` in the deployment JSON:
+
+```json
+{
+  "type": "vm",
+  "hostname": "rocky10-test",
+  "node": "proxmox01",
+  "cpu_type": "x86-64-v3",
+  ...
+}
+```
+
+The check runs before any expensive SFTP/import work. If the node lacks a required flag, the deploy aborts immediately with output like:
+
+```
+✗ Node proxmoxb01 cannot run cpu=x86-64-v3: CPU is missing flag(s) avx2, bmi1, bmi2, fma, movbe, abm
+  CPU on proxmoxb01: Intel(R) Xeon(R) CPU E5-2640 v2 @ 2.00GHz
+  Choose a different node, or set a lower `cpu_type` in the deployment file
+  (e.g. "cpu_type": "x86-64-v2-AES").
+```
+
+**Supported cpu_type values:** `x86-64-v2`, `x86-64-v2-AES` (Poiesis's default), `x86-64-v3`, `x86-64-v4`. Specific CPU model names (`host`, `Haswell`, `Skylake`, etc.) are accepted but skip the flag-level check — the operator is presumed to know what they're requesting.
+
+**Default:** The global default lives at `vm.cpu_type` in `config.yaml` (ships as `x86-64-v2-AES`). The per-deployment `cpu_type` JSON field always wins when present.
 
 ---
 

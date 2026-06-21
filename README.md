@@ -43,7 +43,7 @@ Poiesis manages the complete lifecycle of Proxmox resources across ten scripts:
 - **`decomm_bigip.py`** *(helper, called by `decomm.py`)* — revokes the F5 license (`tmsh revoke sys license`) so the key returns to your pool, removes DNS, removes from inventory, then destroys the VM; aborts before destroy if revocation fails so the appliance is recoverable; supports `--force-decomm` to skip revoke when the VM is hung/unreachable. Not meant for direct invocation — use `decomm.py` instead.
 - **`cleanup_tagged.py`** — scan the cluster for tagged resources and keep, promote, or decommission each one interactively or via a plan file
 - **`expire.py`** — manage deployment TTLs: check, reap expired hosts, or renew a deployment's TTL
-- **`draft-deployment.py`** — interactive wizard to build a deployment JSON file without deploying; runs the full LXC or VM wizard and saves the result for use with `deploy_lxc.py`, `deploy_vm.py`, or `deploy.py`
+- **`draft-deployment.py`** — interactive wizard to build deployment JSON file(s) without deploying; runs the full LXC or VM wizard and saves the result for use with `deploy_lxc.py`, `deploy_vm.py`, or `deploy.py`. Supports **batch generation** in a single pass (`How many of these to create?` — auto-increments hostnames and static IPs), a configurable **save directory** (override the default `deployments/<type>/`), and a **sticky-answers loop** so you can chain multiple drafts where each new run pre-fills every prompt with the previous answer.
 
 ---
 
@@ -120,7 +120,7 @@ Poiesis/
     │   └── Suse.yml               # OS-specific vars for openSUSE/SLES family
     ├── tasks/
     │   ├── pre-install-Debian.yml # apt update (+ Docker repo setup if needed)
-    │   ├── pre-install-RedHat.yml # epel-release + dnf makecache
+    │   ├── pre-install-RedHat.yml # epel-release (skipped on Fedora) + CRB/PowerTools enable + dnf makecache
     │   ├── pre-install-Suse.yml   # zypper refresh
     │   ├── upgrade-Debian.yml     # apt dist-upgrade + autoremove
     │   ├── upgrade-RedHat.yml     # dnf upgrade + autoremove
@@ -244,7 +244,7 @@ The scripts auto-activate the virtualenv at startup, so you can run them with `p
 | [docs/expiry.md](docs/expiry.md) | All `expire.py` flags, `--check` output example, `--reap`, `--renew`, TTL format reference |
 | [docs/cleanup.md](docs/cleanup.md) | All `cleanup_tagged.py` flags, tag-based cleanup, `--list-file`, action list format, `--dry-run` |
 | [docs/preflight.md](docs/preflight.md) | Every preflight check, fatal vs warning, standalone mode, disabling preflight, `--yolo`, `--silent` |
-| [docs/draft-deployment.md](docs/draft-deployment.md) | `draft-deployment.py` — build a deployment JSON interactively without deploying; LXC and VM wizard walkthroughs, editing drafts, TTL support |
+| [docs/draft-deployment.md](docs/draft-deployment.md) | `draft-deployment.py` — build deployment JSON file(s) interactively without deploying; LXC and VM wizard walkthroughs, editing drafts, TTL support, **batch generation** (`How many of these to create?`), **save-directory override**, **sticky-answers loop** for back-to-back drafts |
 | [docs/deployment-files.md](docs/deployment-files.md) | Deployment JSON field reference, LXC vs VM differences, file locations, `.gitignore` behavior, history log, providers, OS support |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | All known issues, symptoms, causes, and fixes |
 
@@ -266,6 +266,10 @@ python3 configure.py --validate
 python3 draft-deployment.py
 python3 draft-deployment.py --lxc
 python3 draft-deployment.py --vm --ttl 7d
+# Same wizard, but answer "5" at the "How many of these to create?" prompt
+# to write web01.json…web05.json with auto-incremented hostnames and IPs in one pass.
+# After saving, answer "yes" at "Create another draft?" to start a fresh pass with
+# every prompt pre-filled from the just-saved file — change only what differs.
 
 # Deploy an LXC container interactively (DHCP or static IP — wizard will ask)
 python3 deploy_lxc.py

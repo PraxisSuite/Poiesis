@@ -143,6 +143,7 @@ VM-specific fields:
 | `cloud_image_url` | ✓ | — | Download URL for the cloud image. Used if `image_refresh: true` or the image is not cached. |
 | `image_refresh` | optional | — | If `true`, re-download the cloud image before deploying even if the cached file exists. Default: `false`. |
 | `gateway` | optional | — | Default gateway for static IP deployments. Not set for DHCP deployments. |
+| `cpu_type` | optional | — | Per-deployment override for the QEMU `-cpu` model. When absent, `deploy_vm.py` uses `vm.cpu_type` from `config.yaml` (default `x86-64-v2-AES`). **Required for RHEL 10 family cloud images** (Rocky 10, AlmaLinux 10, CentOS Stream 10) — Red Hat raised the baseline microarchitecture for RHEL 10 to `x86-64-v3`, so these images kernel-panic on hosts running anything lower. Common values: `x86-64-v2-AES` (default), `x86-64-v3`, `x86-64-v4`, `host`, or a specific CPU model name (`Haswell`, `Skylake`, …). The preflight `check_node_cpu_baseline` verifies the target node's CPU has every flag the requested type needs and fails fast with a clear error if it doesn't. See [BUG-006 in known-bugs.md](../../known-bugs.md) for the full background. |
 
 ---
 

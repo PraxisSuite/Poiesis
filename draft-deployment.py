@@ -77,6 +77,117 @@ def derive_gateway(ip: str) -> str:
     return f"{parts[0]}.1"
 
 
+_ROOT = Path(__file__).parent.resolve()
+
+
+def _split_hostname_suffix(hostname: str) -> tuple[str, int, int]:
+    """Split `web01` -> (`web`, 1, 2). Returns (stem, starting_n, width).
+
+    If hostname has no trailing digits, returns (hostname, 1, 2) so the very
+    first generated name in a batch becomes `<hostname>01`.
+    """
+    i = len(hostname)
+    while i > 0 and hostname[i - 1].isdigit():
+        i -= 1
+    if i == len(hostname):
+        return hostname, 1, 2
+    stem = hostname[:i]
+    digits = hostname[i:]
+    return stem, int(digits) + 1, max(len(digits), 2)
+
+
+def _increment_ipv4_octet(ip: str, offset: int) -> str:
+    """`10.0.0.50` + offset 2 -> `10.0.0.52`. Wraps an octet if it crosses 255 (rare in practice).
+
+    Caller is responsible for warning about subnet boundaries — this just does
+    the math, since the wizard already collected a static prefix length.
+    """
+    a, b, c, d = (int(p) for p in ip.split("."))
+    d_new = d + offset
+    carry, d_new = divmod(d_new, 256)
+    c_new = c + carry
+    carry, c_new = divmod(c_new, 256)
+    b_new = b + carry
+    carry, b_new = divmod(b_new, 256)
+    a_new = a + carry
+    return f"{a_new}.{b_new}.{c_new}.{d_new}"
+
+
+def _prompt_save_dir(kind: str) -> Path | None:
+    """Ask where to save the draft(s).
+
+    Recommends `deployments/{kind}/` under the project root and accepts a
+    user-supplied absolute or relative path. Returns None if the user accepted
+    the default (so the caller can let `write_deployment_file` apply its own
+    default behavior, which is the same path), or an explicit Path otherwise.
+    """
+    default_dir = _ROOT / "deployments" / kind
+    answer = pt_text(
+        "Save draft(s) to directory:",
+        default=str(default_dir),
+        instruction="press Enter to accept the default location",
+    )
+    if answer is BACK:
+        return BACK
+    chosen = answer.strip()
+    if not chosen or Path(chosen).resolve() == default_dir.resolve():
+        return None
+    return Path(chosen).expanduser().resolve()
+
+
+def _prompt_count() -> int:
+    """Ask how many of this system to generate. Returns int >= 1."""
+    answer = pt_text(
+        "How many of these to create?",
+        default="1",
+        instruction="press Enter for 1; type N to generate a batch of N files",
+        validate=lambda v: True if v.strip().isdigit() and int(v) >= 1 else "Must be a positive integer",
+    )
+    if answer is BACK:
+        return BACK
+    return int(answer.strip())
+
+
+def save_drafts(data: dict, base_hostname: str, kind: str, cfg: dict,
+                count: int, save_dir: Path | None) -> list[Path]:
+    """Write `count` draft files based on `data`, with hostname (and static IP)
+    auto-incremented across the batch.
+
+    For count == 1: writes a single file at <hostname>.json — exactly what the
+    pre-batch behavior did.
+
+    For count > 1: derives a stem from the last trailing digits of base_hostname
+    (e.g. `web01` -> `web`, starting at 02) and writes web01..webNN. If the IP
+    is static, increments the last octet for each. DHCP files all just get
+    `"ip_address": "dhcp"` (DHCP server handles uniqueness).
+    """
+    domain = cfg["proxmox"].get("node_domain", "")
+    paths: list[Path] = []
+
+    if count == 1:
+        hostname = base_hostname
+        record = dict(data)
+        record["hostname"] = hostname
+        record["fqdn"] = f"{hostname}.{domain}" if domain else hostname
+        paths.append(write_deployment_file(record, hostname, kind, cfg, save_dir=save_dir))
+        return paths
+
+    stem, start_n, width = _split_hostname_suffix(base_hostname)
+    static_ip = data.get("ip_address", "")
+    is_static = static_ip and static_ip != "dhcp"
+
+    for i in range(count):
+        hostname = f"{stem}{str(start_n + i).zfill(width)}"
+        record = dict(data)
+        record["hostname"] = hostname
+        record["fqdn"] = f"{hostname}.{domain}" if domain else hostname
+        if is_static:
+            record["ip_address"] = _increment_ipv4_octet(static_ip, i)
+        paths.append(write_deployment_file(record, hostname, kind, cfg, save_dir=save_dir))
+
+    return paths
+
+
 # LXC feature flag choices (mirrors deploy_lxc.py)
 LXC_FEATURE_CHOICES = [
     ("nesting=1",  "nesting=1   — nested containers (Docker, Podman, LXC-in-LXC)"),
@@ -309,8 +420,17 @@ def run_lxc_wizard(proxmox, nodes, cfg, deploy, ttl):
         console.print(table)
         console.print()
 
+        count = _prompt_count()
+        if count is BACK:
+            return BACK
+        save_dir = _prompt_save_dir("lxc")
+        if save_dir is BACK:
+            return BACK
+
         try:
-            r = questionary.confirm("Save draft deployment file?", default=True).unsafe_ask()
+            r = questionary.confirm(
+                f"Save {count} draft deployment file(s)?", default=True
+            ).unsafe_ask()
         except KeyboardInterrupt:
             console.print("\n[yellow]Aborted.[/yellow]")
             sys.exit(0)
@@ -320,13 +440,12 @@ def run_lxc_wizard(proxmox, nodes, cfg, deploy, ttl):
             console.print("[yellow]Draft cancelled.[/yellow]")
             sys.exit(0)
 
-        # Build and save the deployment JSON
-        domain = cfg["proxmox"].get("node_domain", "")
-        fqdn = f"{s['hostname']}.{domain}" if domain else s["hostname"]
+        # Build the per-record template; save_drafts() handles hostname/IP
+        # increments for the count > 1 case.
         use_dhcp = s.get("use_dhcp", True)
         data = {
-            "hostname":        s["hostname"],
-            "fqdn":            fqdn,
+            "hostname":        s["hostname"],   # overwritten per-record by save_drafts
+            "fqdn":            "",              # overwritten per-record by save_drafts
             "node":            s["node_name"],
             "template_volid":  s["template_volid"],
             "template_name":   s["template_name"],
@@ -348,23 +467,35 @@ def run_lxc_wizard(proxmox, nodes, cfg, deploy, ttl):
             data["ttl"]        = ttl
             data["expires_at"] = expires_at_from_ttl(ttl)
 
-        path = write_deployment_file(data, s["hostname"], "lxc", cfg)
-        console.print()
-        console.print(Panel.fit(
-            f"[bold green]✓ Draft saved[/bold green]\n\n"
-            f"  [bold]{path}[/bold]\n\n"
-            f"  Deploy with:\n"
-            f"  [dim]python3 deploy_lxc.py --deploy-file {path}[/dim]",
-            border_style="green",
-        ))
-        return {**s, "_saved": True}
+        paths = save_drafts(data, s["hostname"], "lxc", cfg, count, save_dir)
 
-    run_wizard_steps([
+        console.print()
+        if len(paths) == 1:
+            console.print(Panel.fit(
+                f"[bold green]✓ Draft saved[/bold green]\n\n"
+                f"  [bold]{paths[0]}[/bold]\n\n"
+                f"  Deploy with:\n"
+                f"  [dim]python3 deploy_lxc.py --deploy-file {paths[0]}[/dim]",
+                border_style="green",
+            ))
+        else:
+            file_list = "\n".join(f"  [bold]{p}[/bold]" for p in paths)
+            console.print(Panel.fit(
+                f"[bold green]✓ {len(paths)} drafts saved[/bold green]\n\n"
+                f"{file_list}\n\n"
+                f"  Batch-deploy with:\n"
+                f"  [dim]python3 deploy.py --batch {' '.join(str(p) for p in paths)}[/dim]",
+                border_style="green",
+            ))
+        return {**s, "_saved": True, "_saved_paths": paths}
+
+    final_state = run_wizard_steps([
         _ws["hostname"], _ws["cpus"], _ws["memory"], _ws["disk"], _ws["vlan"], _ws["password"],
         step_ip, step_prefix, step_gateway,
         _ws["package_profile"], _ws["extra_packages"], step_lxc_features,
         _ws["node"], step_template, step_storage, step_confirm,
     ])
+    return final_state.get("_saved_paths", [])
 
 
 # ─────────────────────────────────────────────
@@ -604,8 +735,17 @@ def run_vm_wizard(proxmox, nodes, cfg, deploy, ttl):
         console.print(table)
         console.print()
 
+        count = _prompt_count()
+        if count is BACK:
+            return BACK
+        save_dir = _prompt_save_dir("vms")
+        if save_dir is BACK:
+            return BACK
+
         try:
-            r = questionary.confirm("Save draft deployment file?", default=True).unsafe_ask()
+            r = questionary.confirm(
+                f"Save {count} draft deployment file(s)?", default=True
+            ).unsafe_ask()
         except KeyboardInterrupt:
             console.print("\n[yellow]Aborted.[/yellow]")
             sys.exit(0)
@@ -615,14 +755,11 @@ def run_vm_wizard(proxmox, nodes, cfg, deploy, ttl):
             console.print("[yellow]Draft cancelled.[/yellow]")
             sys.exit(0)
 
-        # Build and save the deployment JSON
-        domain = cfg["proxmox"].get("node_domain", "")
-        fqdn = f"{s['hostname']}.{domain}" if domain else s["hostname"]
         use_dhcp = s.get("use_dhcp", True)
         data = {
             "type":                "vm",
-            "hostname":            s["hostname"],
-            "fqdn":                fqdn,
+            "hostname":            s["hostname"],   # overwritten by save_drafts
+            "fqdn":                "",              # overwritten by save_drafts
             "node":                s["node_name"],
             "cloud_image_storage": s["image_storage_name"],
             "cloud_image_filename": s["image_filename"],
@@ -645,23 +782,35 @@ def run_vm_wizard(proxmox, nodes, cfg, deploy, ttl):
             data["ttl"]        = ttl
             data["expires_at"] = expires_at_from_ttl(ttl)
 
-        path = write_deployment_file(data, s["hostname"], "vms", cfg)
-        console.print()
-        console.print(Panel.fit(
-            f"[bold green]✓ Draft saved[/bold green]\n\n"
-            f"  [bold]{path}[/bold]\n\n"
-            f"  Deploy with:\n"
-            f"  [dim]python3 deploy_vm.py --deploy-file {path}[/dim]",
-            border_style="green",
-        ))
-        return {**s, "_saved": True}
+        paths = save_drafts(data, s["hostname"], "vms", cfg, count, save_dir)
 
-    run_wizard_steps([
+        console.print()
+        if len(paths) == 1:
+            console.print(Panel.fit(
+                f"[bold green]✓ Draft saved[/bold green]\n\n"
+                f"  [bold]{paths[0]}[/bold]\n\n"
+                f"  Deploy with:\n"
+                f"  [dim]python3 deploy_vm.py --deploy-file {paths[0]}[/dim]",
+                border_style="green",
+            ))
+        else:
+            file_list = "\n".join(f"  [bold]{p}[/bold]" for p in paths)
+            console.print(Panel.fit(
+                f"[bold green]✓ {len(paths)} drafts saved[/bold green]\n\n"
+                f"{file_list}\n\n"
+                f"  Batch-deploy with:\n"
+                f"  [dim]python3 deploy.py --batch {' '.join(str(p) for p in paths)}[/dim]",
+                border_style="green",
+            ))
+        return {**s, "_saved": True, "_saved_paths": paths}
+
+    final_state = run_wizard_steps([
         _ws["hostname"], _ws["cpus"], _ws["memory"], _ws["disk"], _ws["vlan"], _ws["password"],
         _ws["package_profile"], _ws["extra_packages"],
         step_ip, step_prefix, step_gateway,
         _ws["node"], step_image, step_storage, step_confirm,
     ])
+    return final_state.get("_saved_paths", [])
 
 
 # ─────────────────────────────────────────────
@@ -767,10 +916,34 @@ def main() -> None:
 
     console.print(f"[green]✓ Connected.[/green] {len(nodes)} node(s) online.\n")
 
-    if kind == "lxc":
-        run_lxc_wizard(proxmox, nodes, cfg, deploy, ttl)
-    else:
-        run_vm_wizard(proxmox, nodes, cfg, deploy, ttl)
+    # Outer loop: after each completed draft (or batch), offer to build another
+    # using the just-saved file as the new starting point so most answers stick.
+    current_seed = deploy
+    while True:
+        if kind == "lxc":
+            saved_paths = run_lxc_wizard(proxmox, nodes, cfg, current_seed, ttl)
+        else:
+            saved_paths = run_vm_wizard(proxmox, nodes, cfg, current_seed, ttl)
+
+        if not saved_paths:
+            break
+
+        try:
+            again = questionary.confirm(
+                "Create another draft (keeps all answers — change only what differs)?",
+                default=False,
+            ).unsafe_ask()
+        except KeyboardInterrupt:
+            console.print()
+            break
+        if not again:
+            break
+
+        # Seed the next iteration from the most recently saved file. The wizard
+        # uses every field as the default prompt value, so the user just hits
+        # Enter through anything that stays the same.
+        current_seed = load_deployment_file(str(saved_paths[-1]))
+        console.print()
 
 
 if __name__ == "__main__":
