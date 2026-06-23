@@ -1555,7 +1555,10 @@ python3 push-key.py --deploy-file deployments/lxc/myserver.json --user all
 
 ---
 
-## Per-Image CPU Baseline Auto-Detection
+## Per-Image CPU Baseline Auto-Detection — **Implemented**
+
+> **Status: Implemented 2026-06-23.**
+> `cloud-images.yaml` entries can now carry an optional `cpu_baseline` field. `deploy_vm.py` (`resolve_cpu_type()` in the script) reads it as the middle tier of a 3-tier resolution order: deployment-JSON `cpu_type` > catalog `cpu_baseline` > `config.yaml` `vm.cpu_type` default. Rocky 10, Alma 10, and CentOS Stream 10 catalog entries are pre-tagged with `cpu_baseline: x86-64-v3`. Operators no longer need to remember the `cpu_type` JSON field for RHEL 10 family deploys — the wizard prints which source the resolved value came from. The follow-on "auto-node-pick" idea (filter the node-picker list to only nodes that can run the chosen image) is NOT yet implemented and remains future work.
 
 Today, RHEL 10 family deploys (Rocky 10, Alma 10, CentOS Stream 10) require the operator to know to set `"cpu_type": "x86-64-v3"` in the deployment JSON — otherwise the VM boot-loops on pre-Haswell hosts (BUG-006). The `check_node_cpu_baseline` preflight catches the *node* mismatch but assumes the operator already knew which `cpu_type` to ask for.
 
