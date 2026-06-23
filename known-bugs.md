@@ -11,7 +11,7 @@ work. For user-reported bugs or feature requests, open an issue at:
 https://github.com/PraxisSuite/Poiesis/issues
 
 **Conventions:**
-- Bug IDs are sequential and never reused. Next ID: **BUG-009**.
+- Bug IDs are sequential and never reused. Next ID: **BUG-011**.
 - New bugs go into the `# Known Bugs / Issues` section with the next available ID.
 - When a bug is fixed, move it to the **top** of the `# FIXED Bugs / Issues` section
   (most recently fixed first) and update Status, Date Fixed, and add a Fix Applied section.
@@ -62,6 +62,164 @@ If the bug is open, describe any workaround. If none exists, state that explicit
 ---
 # FIXED Bugs / Issues
 ---
+
+## BUG-010 — FreeBSD VM deploys silently hang (cloud image bugs + 7 secondary issues)
+
+**Status:** Fixed
+**Severity:** High (blocked every FreeBSD deploy — VM appeared running but was unreachable, then later hung Ansible mid-playbook)
+**Affected script:** `deploy_vm.py` → many — see Fix Applied list
+**First observed:** 2026-06-21, test-freebsd (VMID 148) on `proxmoxb01` — VM started, MAC absent from bridge FDB, serial console silent, configured static IP never responded
+**Date Added:** 2026-06-21
+**Date Fixed:** 2026-06-22
+
+### Symptom — original
+
+Deploy completes Steps 1–3, then Step 4 (Wait for SSH on the static IP) times
+out at 300s. From outside:
+- VM is reported as `running` by `qm status`
+- MAC is **not** in the bridge FDB — VM has sent zero frames
+- Serial console produces zero bytes when probed via raw socat
+- Pings to the configured static IP get no response
+- `qm terminal <vmid>` *does* work and shows a fully booted FreeBSD with a
+  passwordless root login on a DHCP-assigned IP that ignores the static IP
+  Proxmox put in the cloud-init config
+
+### Root Causes — seven distinct issues, layered
+
+Resolving this required fixing **all seven** issues. The full diagnosis took a
+day of iterative debugging because each fix exposed the next layer:
+
+1. **`qm importdisk` doesn't decompress `.xz` files** — the cached image was
+   `FreeBSD-...-ufs.qcow2.xz`; the VM disk ended up containing the literal
+   XZ-format bytes (magic `fd 37 7a 58 5a`), SeaBIOS found no MBR, the kernel
+   never booted. Confirmed via `od /dev/pve/vm-148-disk-0`.
+
+2. **`BASIC-CLOUDINIT-*` images don't ship real cloud-init** — they ship
+   `nuageinit`, FreeBSD's limited cloud-init alternative. nuageinit can't
+   parse Proxmox's NoCloud-format network-config v1, so the static IP +
+   password + SSH key from Proxmox cloud-init are silently ignored. FreeBSD's
+   default `ifconfig_DEFAULT="SYNCDHCP"` runs dhclient, so the VM does get
+   *a* DHCP-assigned IP — just not the one we configured.
+
+3. **FreeBSD root has no password by default in cloud images, but sshd has
+   `PermitRootLogin no`** — so passwordless root works on the console but not
+   over SSH. Even with our SSH key installed manually, sshd rejects root.
+
+4. **`pkg install python311` doesn't create `/usr/local/bin/python3`** — only
+   `python3.11`. Ansible's interpreter-discovery fallback list looks for
+   `python3` first; without the symlink, Ansible's first task (`ping` module)
+   hangs the full wait_for_connection timeout (1800s).
+
+5. **Ansible's `Wait for cloud-init first-boot to complete` task waits for
+   `/run/cloud-init/result.json`** — nuageinit doesn't create that file, so
+   on FreeBSD the task waited the full 1800s × 5 retries = 2.5 hours before
+   failing.
+
+6. **The post-deploy playbook used `chpasswd` to set user passwords** —
+   `chpasswd` is a Linux-only utility. FreeBSD uses `pw usermod -h 0` with
+   stdin-fed password.
+
+7. **The FreeBSD package list had wrong/Linux names** — `ethtool` doesn't
+   exist on FreeBSD at all, `bc` is in base (no pkg), `p7zip` was renamed to
+   `7-zip` in FreeBSD ports.
+
+### Fix Applied
+
+Seven changes spread across six files:
+
+| Issue | Fix |
+|---|---|
+| (1) .xz not decompressed | `modules/proxmox.py:import_cloud_image()` — added `xz -dkf` step before `qm importdisk` when filename ends in `.xz` |
+| (2) No real cloud-init | New `modules/freebsd_firstboot.py` — drives `qm terminal` via paramiko to log in (passwordless root), then writes `/etc/rc.conf` (static IP + disable nuageinit + disable DHCP default), `/root/.ssh/authorized_keys` (chunked-write because FreeBSD's serial tty has a ~256-char input-line limit), `/etc/resolv.conf`, sets root password via `pw usermod`, restarts networking. Wired into `deploy_vm.py` between Step 3 and Step 4 when `image_filename.startswith("FreeBSD-")` |
+| (3) sshd PermitRootLogin no | `freebsd_firstboot.py` also writes `/etc/ssh/sshd_config.d/00-poiesis.conf` with `PermitRootLogin yes` + `PasswordAuthentication yes` and adds the `Include` directive to the main sshd_config if missing; restarts sshd |
+| (4) No python3 symlink | `freebsd_firstboot.py` also runs `pkg install -y python311 && ln -sf /usr/local/bin/python3.11 /usr/local/bin/python3` |
+| (5) cloud-init wait hang | `ansible/post-deploy-vm.yml` — added `when: ansible_os_family != 'FreeBSD'` to the `Wait for cloud-init first-boot to complete` task |
+| (6) chpasswd not on FreeBSD | `ansible/post-deploy-vm.yml` — split both chpasswd tasks (dad-user pw, root pw) into Linux variant (`chpasswd`) and FreeBSD variant (`echo <pw> \| pw usermod <user> -h 0`) with `when:` guards |
+| (7) Wrong pkg names | `ansible/vars/FreeBSD.yml` — removed `ethtool` (no FreeBSD equivalent), removed `bc` (in base), renamed `p7zip` → `7-zip` |
+
+### Validation
+
+`test-freebsd` deployed clean end-to-end in 8m 00s on 2026-06-22 — full
+chain: `.xz` decompression → VM creation → serial-console firstboot →
+network + SSH + Python ready → Ansible post-deploy runs every task to
+completion → DNS registered → inventory added.
+
+### Lessons / further work
+
+- The `feedback_check_console_first.md` memory got an active workout —
+  every dead-end I chased on FreeBSD (UEFI requirement, x86-64-v3, sshd
+  config, etc.) was a wrong hypothesis until I drove the serial console
+  via paramiko and saw what was actually happening.
+- Future BSD-flavored cloud images (OpenBSD, NetBSD) will likely hit
+  similar issues — the chunked-write SSH key, `pw` vs `chpasswd`, and the
+  cloud-init result.json skip are the most-reusable parts of the fix.
+- BUG-010 has effectively replaced what I originally thought was multiple
+  issues. The single bug ID captures the full investigation.
+
+---
+
+## BUG-009 — Alpine VM deploys fail at DHCP discovery (vendor-data snippet uses systemctl, Alpine uses OpenRC)
+
+**Status:** Fixed
+**Severity:** High (blocks every Alpine VM deploy with DHCP — VM is actually healthy, but the deploy times out and is marked failed)
+**Affected script:** `deploy_vm.py` → `modules/proxmox.py` (`write_guest_agent_snippet`)
+**First observed:** 2026-06-21, test-alpine (VMID 147) on `proxmoxb01` — VM booted cleanly, got DHCP-assigned IP 10.200.200.140, SSH key worked, but `deploy_vm.py` timed out waiting for guest agent because the agent service never started
+**Date Added:** 2026-06-21
+**Date Fixed:** 2026-06-21
+
+### Symptom
+
+```
+─── Step 4/7: Discovering DHCP IP via guest agent ───
+✗ Guest agent did not report a non-loopback IP within 600s.
+```
+
+Inspection inside the running Alpine VM (reached via the SSH key that cloud-init injected):
+
+```
+# apk info -e qemu-guest-agent
+qemu-guest-agent                  <-- installed
+# rc-service qemu-guest-agent status
+ * status: stopped                 <-- never started
+# cloud-init status --long
+status: error
+errors:
+  - ('scripts_user', RuntimeError('Runparts: 1 failures (runcmd) in 1 attempted commands'))
+```
+
+### Root Cause
+
+`write_guest_agent_snippet()` in `modules/proxmox.py` writes a vendor-data
+cloud-init snippet that installs `qemu-guest-agent` via the cloud-init
+`packages:` directive and then enables/starts it via:
+
+```yaml
+runcmd:
+  - systemctl enable --now qemu-guest-agent
+```
+
+The `packages:` directive works on Alpine (cloud-init dispatches to `apk`). But `systemctl` doesn't exist on Alpine — Alpine uses **OpenRC**, not systemd. The runcmd fails, cloud-init marks `modules-final` as failed, qga is installed but never started, and `deploy_vm.py` times out waiting for the QGA-reported IP.
+
+### Fix Applied
+
+`modules/proxmox.py` `write_guest_agent_snippet()` — replaced the single-line `systemctl` runcmd with a shell-detected init-system block that handles every Linux init we deploy:
+
+```bash
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl enable --now qemu-guest-agent
+elif command -v rc-update >/dev/null 2>&1; then
+  rc-update add qemu-guest-agent default
+  rc-service qemu-guest-agent start
+elif command -v service >/dev/null 2>&1; then
+  service qemu-guest-agent start || true
+fi
+```
+
+systemd-based distros (Debian/RHEL/Suse/Fedora/etc.) keep using systemctl; Alpine takes the OpenRC branch; the final `service` fallback covers sysvinit-style edge cases without affecting existing deploys.
+
+---
+
+
 
 ## BUG-008 — RHEL 10 family (Rocky 10, AlmaLinux 10) Ansible post-deploy fails on renamed packages + missing CRB repo on Rocky 10
 
