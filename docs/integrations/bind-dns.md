@@ -91,8 +91,11 @@ subnet in use. For subnet `10.220.220.0/24`, create:
 ## DHCP Deployments and DNS
 
 For DHCP-deployed resources, the IP is not known at the start of deployment. Poiesis
-waits for the DHCP lease to be discovered (via qemu-guest-agent for VMs, or polling for
-LXC), then stores the discovered IP in `assigned_ip` in the deployment file.
+waits for the DHCP lease to be discovered (via qemu-guest-agent for Linux VMs, or
+polling for LXC), then stores the discovered IP in `assigned_ip` in the deployment file.
+FreeBSD VMs don't support DHCP in Poiesis — the cloud image doesn't ship
+qemu-guest-agent so there's no way to discover the lease — so FreeBSD deployments
+must use a static IP and the `assigned_ip` field is never written for them.
 
 DNS registration always uses `assigned_ip` (falling back to `ip_address` if
 `assigned_ip` is not set). Decommission scripts do the same — this ensures DNS cleanup

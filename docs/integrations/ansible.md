@@ -59,7 +59,7 @@ playbook completes.
 
 1. Waits for SSH to be available.
 2. Gathers facts.
-3. Loads OS-specific variables (`vars/Debian.yml`, `vars/RedHat.yml`, or `vars/Suse.yml`).
+3. Loads OS-specific variables (`vars/Debian.yml`, `vars/RedHat.yml`, `vars/Suse.yml`, `vars/Alpine.yml`, or `vars/FreeBSD.yml`).
 4. Sets hostname and `/etc/hosts`.
 5. Creates secondary user and sets passwords.
 6. Configures SSH (`PermitRootLogin yes`, `PasswordAuthentication yes`).
@@ -71,7 +71,7 @@ playbook completes.
 12. Configures chrony NTP.
 13. Configures and starts snmpd.
 14. Runs OS-specific upgrade tasks.
-15. VM only: installs and starts `qemu-guest-agent`.
+15. VM only: installs and starts `qemu-guest-agent` (skipped on FreeBSD — the pkg is in the standard package list but enabling it via systemd-style `service` fights FreeBSD's rc.conf convention; enable manually post-deploy if needed).
 
 ### Multi-OS support
 
@@ -84,11 +84,23 @@ include_vars: "vars/{{ ansible_os_family }}.yml"
 | OS Family | vars file | pre-install tasks | upgrade tasks |
 |---|---|---|---|
 | Debian (Ubuntu, Debian) | `vars/Debian.yml` | `pre-install-Debian.yml` | `upgrade-Debian.yml` |
-| RedHat (Rocky, AlmaLinux, CentOS) | `vars/RedHat.yml` | `pre-install-RedHat.yml` | `upgrade-RedHat.yml` |
-| Suse (openSUSE) | `vars/Suse.yml` | `pre-install-Suse.yml` | `upgrade-Suse.yml` |
+| RedHat (Rocky, AlmaLinux, CentOS Stream, Fedora, Oracle) | `vars/RedHat.yml` | `pre-install-RedHat.yml` | `upgrade-RedHat.yml` |
+| Suse (openSUSE Leap, Tumbleweed) | `vars/Suse.yml` | `pre-install-Suse.yml` | `upgrade-Suse.yml` |
+| Alpine | `vars/Alpine.yml` | `pre-install-Alpine.yml` | `upgrade-Alpine.yml` |
+| FreeBSD | `vars/FreeBSD.yml` | `pre-install-FreeBSD.yml` | `upgrade-FreeBSD.yml` |
 
 Adding a new OS family: create the three files above with the appropriate variable names
-and package manager commands. No changes to the main playbooks required.
+and package manager commands. Vars must define: `ssh_service`, `sudo_group`,
+`chrony_conf_path`, `chrony_service`, `snmpd_conf_path`, `snmp_mibs_dir`, `user_shell`,
+`sshd_config_d_path`, `ip_show_cmd`, and a `packages:` list. No changes to the main
+playbooks required.
+
+**FreeBSD-specific notes:** Several `post-deploy-vm.yml` tasks have FreeBSD-conditional
+variants — the password-set tasks use `pw usermod -h 0` instead of `chpasswd`, and the
+`Wait for cloud-init first-boot to complete` task is skipped (FreeBSD's `nuageinit`
+doesn't create `/run/cloud-init/result.json`). The pre-firstboot heavy lifting
+(network, SSH key, Python install) happens in `modules/freebsd_firstboot.py` before
+Ansible ever runs — see [deploy-vm.md → FreeBSD Deployments](../deploy-vm.md#freebsd-deployments-serial-console-firstboot).
 
 ### Disabling Ansible
 

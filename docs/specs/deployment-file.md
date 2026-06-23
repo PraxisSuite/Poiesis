@@ -139,10 +139,10 @@ VM-specific fields:
 |---|---|---|---|
 | `type` | ✓ | ✓ | Always `"vm"`. Distinguishes VM files from LXC files when both are processed together (e.g. by `expire.py`). LXC files do not have this field. |
 | `cloud_image_storage` | ✓ | — | Proxmox storage where the cloud image is cached. e.g. `local`. Must support `iso` content type. |
-| `cloud_image_filename` | ✓ | — | Filename of the cloud image on the Proxmox node. e.g. `noble-server-cloudimg-amd64.img`. |
+| `cloud_image_filename` | ✓ | — | Filename of the cloud image on the Proxmox node. e.g. `noble-server-cloudimg-amd64.img`. `.qcow2.xz` files (FreeBSD) are auto-decompressed on the Proxmox node before `qm importdisk` — the catalog filename keeps the `.xz` suffix matching the upstream download. When this field starts with `FreeBSD-`, `deploy_vm.py` runs the [serial-console firstboot](../deploy-vm.md#freebsd-deployments-serial-console-firstboot) module between Step 3 and Step 4 to configure network, password, SSH key, and Python (FreeBSD's `BASIC-CLOUDINIT` images don't ship real cloud-init). |
 | `cloud_image_url` | ✓ | — | Download URL for the cloud image. Used if `image_refresh: true` or the image is not cached. |
 | `image_refresh` | optional | — | If `true`, re-download the cloud image before deploying even if the cached file exists. Default: `false`. |
-| `gateway` | optional | — | Default gateway for static IP deployments. Not set for DHCP deployments. |
+| `gateway` | optional* | — | Default gateway for static IP deployments. Not set for DHCP deployments. *Required for FreeBSD deployments (which cannot use DHCP — see `cloud_image_filename` note above).* |
 | `cpu_type` | optional | — | Per-deployment override for the QEMU `-cpu` model. When absent, `deploy_vm.py` uses `vm.cpu_type` from `config.yaml` (default `x86-64-v2-AES`). **Required for RHEL 10 family cloud images** (Rocky 10, AlmaLinux 10, CentOS Stream 10) — Red Hat raised the baseline microarchitecture for RHEL 10 to `x86-64-v3`, so these images kernel-panic on hosts running anything lower. Common values: `x86-64-v2-AES` (default), `x86-64-v3`, `x86-64-v4`, `host`, or a specific CPU model name (`Haswell`, `Skylake`, …). The preflight `check_node_cpu_baseline` verifies the target node's CPU has every flag the requested type needs and fails fast with a clear error if it doesn't. See [BUG-006 in known-bugs.md](../../known-bugs.md) for the full background. |
 
 ---

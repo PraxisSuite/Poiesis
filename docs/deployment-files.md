@@ -308,22 +308,29 @@ VM deployments (`deploy_vm.py`) support any cloud-init capable image. The Ansibl
 
 | OS | Status | Notes |
 |---|---|---|
-| Ubuntu 24.04 LTS | Tested and verified | Fully supported |
-| Rocky Linux 8 | Tested and verified | First boot takes up to 15 min due to cloud image running full `dnf upgrade`; cloud-init wait uses `/run/cloud-init/result.json` (not `cloud-init status --wait`); Python interpreter resolved via `auto` |
-| openSUSE Leap 15.6 | Tested and verified | Works; low priority — not actively maintained until a GitHub issue is filed; harmless Python 3.6 Ansible warning expected |
-| Debian 12 / Ubuntu 22.04 | Should work | Same OS family as Ubuntu 24.04; untested |
-| AlmaLinux / CentOS Stream / Fedora | Should work | Same OS family as Rocky Linux 8; untested |
-| openSUSE Tumbleweed / SLES | Should work | Same OS family as Leap; untested |
+| Ubuntu 26.04 LTS / 24.04 / 22.04 / 20.04 | Tested and verified | Fully supported (Debian family) |
+| Debian 13 / 12 / 11 | Tested and verified | Debian 13 (Trixie) required dropping `snmp-mibs-downloader` from the package list — see BUG-004 |
+| Rocky Linux 10 / 9 / 8 | Tested and verified (10) | Rocky 10 requires `cpu_type: x86-64-v3` in the deployment JSON (BUG-006) and needs CRB enabled to pull EPEL transitive deps (BUG-008); Rocky 8 also takes ~15 min for first-boot `dnf upgrade` |
+| AlmaLinux 10 / 9 / 8 | Tested and verified (10) | Same RHEL-10 baseline as Rocky 10; Alma enables CRB by default in cloud images |
+| CentOS Stream 10 / 9 | Should work | Same RHEL family — uses `RedHat.yml` and `pre-install-RedHat.yml` |
+| Fedora 44 / 43 | Tested and verified | EPEL skipped on Fedora (BUG-003) |
+| Oracle Linux 9 / 8 | Should work | Same RHEL family |
+| openSUSE Leap 16.0 | Tested and verified | Leap 16 needed several package-name corrections — see BUG-007 |
+| openSUSE Tumbleweed | Should work | Same Suse family; rolling release |
+| Alpine 3.24 | Tested and verified | Alpine uses OpenRC, not systemd — the qga vendor-data snippet auto-detects the init system (BUG-009) |
+| FreeBSD 15 / 14 | Tested and verified | Required new `modules/freebsd_firstboot.py` serial-console module — see BUG-010 and [deploy-vm.md → FreeBSD Deployments](deploy-vm.md#freebsd-deployments-serial-console-firstboot). **Static IP only.** |
 
 **OS families covered by the Ansible multi-OS pattern:**
 
 - **Debian family:** Debian, Ubuntu, Linux Mint, Raspbian, Kali, Pop!_OS
 - **RedHat family:** Rocky, AlmaLinux, CentOS Stream, RHEL, Fedora, Oracle Linux
 - **Suse family:** openSUSE Leap, openSUSE Tumbleweed, SLES
+- **Alpine family:** Alpine Linux (OpenRC-based)
+- **FreeBSD family:** FreeBSD (via serial-console first-boot module, static IP only)
 
 If a specific package name differs for a new distro, update the relevant `ansible/vars/<Family>.yml` file — no playbook changes needed.
 
-> **Note:** LXC containers (`deploy_lxc.py`) currently support Debian/Ubuntu templates only, as the bootstrap step uses `apt` directly.
+> **LXC containers** (`deploy_lxc.py`): Poiesis supports any Debian-family, RedHat-family, or Suse-family LXC template that's downloadable from Proxmox's community catalog (Ubuntu 22.04/24.04/25.04/26.04, Debian 12/13, Rocky/Alma 9/10, Fedora, openSUSE Leap, Alpine, Devuan, Gentoo, openEuler, and more). The bootstrap step uses the appropriate package manager (`apt`, `dnf`, `zypper`, `apk`) per the LXC template's family. LXC is Linux-only by definition — FreeBSD jails are not supported by Proxmox.
 
 ---
 

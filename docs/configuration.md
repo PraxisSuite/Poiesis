@@ -242,7 +242,7 @@ vm:
   # Leave blank to always prompt without a pre-selection.
   default_cloud_image_storage: local
 
-  cpu_type: x86-64-v2-AES         # VM CPU type (use kvm64 for max compatibility)
+  cpu_type: x86-64-v2-AES         # Default VM cpu model; per-deploy override available via the `cpu_type` field in the deployment JSON. Use `x86-64-v3` for RHEL 10 family (Rocky/Alma 10) — see docs/deploy-vm.md → CPU Baseline Check. Use `kvm64` for max compatibility across older hardware.
   machine: q35                    # VM machine type (q35 or i440fx)
   bios: seabios                   # VM BIOS (seabios or ovmf for UEFI)
   storage_controller: virtio-scsi-pci  # virtio-scsi-pci, lsi, megasas, pvscsi

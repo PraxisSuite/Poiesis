@@ -173,7 +173,7 @@ The script prompts for a password retry on the first failure.
 
 - Check the VM console in the Proxmox web UI — cloud-init errors appear on the serial console
 - Confirm the cloud image was imported correctly (VM should have a scsi0 disk in the Proxmox UI)
-- For DHCP: confirm `qemu-guest-agent` is installed and running. Ubuntu 24.04 cloud images do not ship it by default — Poiesis installs it via a cloud-init vendor-data snippet at deploy time. Rocky Linux 8 and openSUSE Leap 15.6 also require this snippet. If you're using a custom image that does not support vendor-data, you may need to install qemu-guest-agent manually or use a static IP instead.
+- For DHCP: confirm `qemu-guest-agent` is installed and running. Ubuntu 24.04 cloud images do not ship it by default — Poiesis installs it via a cloud-init vendor-data snippet at deploy time. Rocky Linux 8 and openSUSE Leap 15.6 also require this snippet. The snippet detects the init system at runtime (`systemctl` for most distros, `rc-update` + `rc-service` for Alpine OpenRC, falling back to `service`). If you're using a custom image that does not support vendor-data, you may need to install qemu-guest-agent manually or use a static IP instead. **FreeBSD: cannot use DHCP** because the BASIC-CLOUDINIT image doesn't ship qemu-guest-agent at all and nuageinit ignores network-config — FreeBSD deployments require a static IP (the `modules/freebsd_firstboot.py` serial-console module configures it).
 - For static: confirm the IP and gateway are reachable on the VLAN
 
 ---
@@ -184,7 +184,7 @@ The script prompts for a password retry on the first failure.
 
 **Cause:** A bug in cloud-init 23.4 causes `cloud-init status --wait` to call `systemctl show-environment`, which fails over SSH.
 
-**Status: Fixed.** Poiesis does not use `cloud-init status --wait`. Instead, it waits for `/run/cloud-init/result.json` to appear, which is written by cloud-init when all first-boot stages complete and works reliably across all supported OS families.
+**Status: Fixed.** Poiesis does not use `cloud-init status --wait`. Instead, it waits for `/run/cloud-init/result.json` to appear, which is written by cloud-init when all first-boot stages complete and works reliably across all Linux OS families. (FreeBSD is the exception: nuageinit doesn't create this file, so the wait task is skipped on FreeBSD via `when: ansible_os_family != 'FreeBSD'` — see [known-bugs.md BUG-010](../known-bugs.md).)
 
 ---
 

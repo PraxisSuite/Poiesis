@@ -20,6 +20,7 @@ The wizard can be driven entirely interactively, pre-filled from a deployment JS
 - [TTL / Expiry](#ttl--expiry)
 - [VLAN Check Behavior](#vlan-check-behavior)
 - [CPU Baseline Check (RHEL 10 family)](#cpu-baseline-check-rhel-10-family)
+- [FreeBSD Deployments (serial-console firstboot)](#freebsd-deployments-serial-console-firstboot)
 - [Preflight Behavior](#preflight-behavior)
 - [Walkthrough: VM Prompt Order](#walkthrough-vm-prompt-order)
 - [The 7 VM Deployment Steps](#the-7-vm-deployment-steps)
@@ -197,6 +198,37 @@ The check runs before any expensive SFTP/import work. If the node lacks a requir
 **Supported cpu_type values:** `x86-64-v2`, `x86-64-v2-AES` (Poiesis's default), `x86-64-v3`, `x86-64-v4`. Specific CPU model names (`host`, `Haswell`, `Skylake`, etc.) are accepted but skip the flag-level check — the operator is presumed to know what they're requesting.
 
 **Default:** The global default lives at `vm.cpu_type` in `config.yaml` (ships as `x86-64-v2-AES`). The per-deployment `cpu_type` JSON field always wins when present.
+
+---
+
+## FreeBSD Deployments (serial-console firstboot)
+
+FreeBSD VM deployments require special handling because the FreeBSD project's `BASIC-CLOUDINIT-*` qcow images don't actually ship full `cloud-init` — they ship `nuageinit`, a limited cloud-init alternative that can't parse Proxmox's NoCloud-format static IP / password / SSH key. So a fresh FreeBSD boot ignores everything Proxmox cloud-init sends and lands at a passwordless root console with a DHCP-assigned IP.
+
+Poiesis handles this transparently:
+
+1. **`.xz` decompression** — `qm importdisk` doesn't auto-decompress; Poiesis runs `xz -dkf` on the cached `.qcow2.xz` before importing, keeping the original `.xz` so re-deploys stay warm.
+2. **`modules/freebsd_firstboot.py`** — after Step 3 (VM start), Poiesis attaches to the VM's serial console via `qm terminal <vmid>` (paramiko-driven SSH session on the Proxmox node) and:
+   - Logs in as root (no password — FreeBSD cloud-image default)
+   - Sets hostname + root password (via `pw usermod -h 0`)
+   - Installs the deploy SSH public key into `/root/.ssh/authorized_keys` (chunked write — FreeBSD's serial tty has a ~256-char input-line limit, so the ~370-char key body is split across short `echo -n … >> file` writes)
+   - Writes `/etc/ssh/sshd_config.d/00-poiesis.conf` with `PermitRootLogin yes` (FreeBSD's stock sshd refuses root by default) and ensures the main `sshd_config` has the `Include` directive
+   - Writes `/etc/rc.conf` with the static IP (`ifconfig_vtnet0`), gateway, removes the DHCP default, disables nuageinit
+   - Writes `/etc/resolv.conf` with the configured DNS servers
+   - Restarts networking (`service netif restart && service routing restart`)
+   - Installs `python311` via pkg and symlinks `/usr/local/bin/python3 -> python3.11` so Ansible's interpreter-discovery succeeds
+
+3. **Ansible post-deploy** then runs normally — the playbook has FreeBSD-aware variants for `chpasswd` (uses `pw`), skips the cloud-init-result wait task (nuageinit doesn't create `/run/cloud-init/result.json`), and `ansible/vars/FreeBSD.yml` uses FreeBSD pkg names instead of Linux ones — notably `7-zip` (not `p7zip`), no `ethtool` (Linux-only, no equivalent), no `bc` (already in FreeBSD base, not a separate pkg), and `vim` (not the RHEL-10 name `vim-enhanced`).
+
+**Hard requirements for FreeBSD deployments:**
+
+- **Static IP only.** Set `ip_address`, `prefix_len`, `gateway` in the deployment JSON. DHCP isn't supported because the cloud image doesn't ship qemu-guest-agent, so Poiesis has no way to discover a DHCP-assigned IP. The firstboot module will refuse to proceed if `ip_address` is `"dhcp"`.
+- **Catalog entries must use `BASIC-CLOUDINIT-*` variants** (e.g. `FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz`). Plain `-ufs.qcow2.xz` doesn't even ship nuageinit; it'd be unreachable. The shipped `cloud-images.yaml` already points at the right variants.
+- **Detection is by filename** — `deploy_vm.py` runs the FreeBSD firstboot path when `cloud_image_filename` starts with `FreeBSD-`.
+
+**Typical timing:** ~8 min total for a fresh FreeBSD deploy on a `proxmoxb`-class node. ~30s decompression, ~1 min VM boot, ~1.5 min firstboot (dominated by `pkg install python311` + dependencies), ~5 min Ansible (mostly the standard package install + `pkg upgrade`).
+
+See [known-bugs.md BUG-010](../known-bugs.md) for the full diagnosis of all seven issues that had to be fixed to get FreeBSD working.
 
 ---
 

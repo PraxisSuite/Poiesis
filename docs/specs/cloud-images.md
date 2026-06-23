@@ -62,8 +62,20 @@ cloud-init for first-boot configuration. Installer ISOs will not work.
 | openSUSE | `.qcow2` | Filename changes between point releases. Check source when upgrading. |
 | Arch Linux | `.qcow2` | Rolling release. Filename is stable (`latest`). |
 
-**FreeBSD note:** Ships as `.qcow2.xz` (compressed). Must be decompressed with `xz -d`
-before Proxmox import, or check if your Proxmox version supports direct `.xz` import.
+**FreeBSD note:** Ships as `.qcow2.xz` (compressed). Poiesis auto-decompresses
+`.xz` files on the Proxmox node after download (`xz -dkf`), keeping the original
+`.xz` cached so re-deploys stay warm; the catalog filename keeps the `.xz` suffix
+matching the upstream download.
+
+FreeBSD VMs use **serial-console first-boot automation** (`modules/freebsd_firstboot.py`)
+because the BASIC-CLOUDINIT image ships `nuageinit`, not real `cloud-init`, and
+nuageinit can't apply Proxmox's network-config. The firstboot module logs in via
+the passwordless root console, writes `/etc/rc.conf` with the static IP, installs
+the deploy SSH key, configures sshd, and installs `python311` so Ansible can run.
+**FreeBSD VMs require a static IP** in the deployment JSON (`ip_address`,
+`prefix_len`, `gateway` — no DHCP support, because the cloud image doesn't ship
+qemu-guest-agent for IP discovery). See [deploy-vm.md → FreeBSD deployments](../deploy-vm.md#freebsd-deployments-serial-console-firstboot)
+and [known-bugs.md BUG-010](../../known-bugs.md) for the full background.
 
 **RHEL 10 family note (Rocky 10, AlmaLinux 10, CentOS Stream 10):** Red Hat raised
 the baseline microarchitecture to `x86-64-v3` (Haswell-era). Cloud-init starts and the

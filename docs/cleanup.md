@@ -212,7 +212,7 @@ For each tagged resource, the script resolves the IP using these sources in orde
 
 1. **Proxmox config** — static IP from the resource's `ipconfig0` / `net0` config key
 2. **Deployment JSON** — `assigned_ip` or `ip_address` from the local `deployments/lxc/` or `deployments/vms/` file
-3. **Proxmox live interfaces API** — queries the running guest directly (requires qemu-guest-agent for VMs)
+3. **Proxmox live interfaces API** — queries the running guest directly (requires qemu-guest-agent for VMs; not available on FreeBSD VMs, which is why FreeBSD deployments use static IPs only)
 4. **DNS lookup** — tries the configured DNS server first (`dns.server`), then falls back to the system resolver
 
 If none of these resolve, IP is shown as `unknown/DHCP` in the table.
