@@ -497,20 +497,116 @@ def main() -> None:
                 templates = get_lxc_templates(proxmox, node_name)
 
             if silent:
-                # Silent mode: no download prompts — use deployment file or first available
-                if not templates:
-                    console.print(f"[red]No LXC templates found on {node_name}.[/red]")
-                    console.print("Download a template first via Proxmox UI or run interactively.")
-                    sys.exit(1)
+                # Silent mode: no interactive prompts. The deployment JSON's
+                # template_volid is authoritative. If it's not downloaded on
+                # the target node yet, attempt to auto-download from the
+                # Proxmox community catalog. If even the catalog doesn't have
+                # it, hard-fail rather than silently substituting a different
+                # template — see BUG-011 in known-bugs.md for why the old
+                # "use first available" fallback was dangerous (could land
+                # an Ubuntu LXC into a Rocky-named deployment file without
+                # the operator noticing).
                 template_volid = str(deploy.get("template_volid", ""))
                 if not template_volid:
+                    if not templates:
+                        console.print(
+                            f"[red]No LXC templates found on {node_name} and "
+                            f"no template_volid in the deployment file.[/red]"
+                        )
+                        sys.exit(1)
+                    # No template requested at all — first downloaded one is the
+                    # historical behavior for hand-written file-driven deploys
+                    # that omit template_volid entirely (rare). Keep that path.
                     template_volid = templates[0]["volid"]
                 elif not any(t["volid"] == template_volid for t in templates):
+                    # Template requested but not on the node — try auto-download
+                    # from the Proxmox community catalog before giving up.
+                    template_name = template_volid.split("/")[-1]
+                    storage = template_volid.split(":", 1)[0] if ":" in template_volid else ""
                     console.print(
-                        f"[yellow]Warning: Template '{template_volid}' not found on "
-                        f"{node_name}. Using first available.[/yellow]"
+                        f"  [yellow]Template '{template_name}' not downloaded on "
+                        f"{node_name}.[/yellow]\n"
+                        f"  [dim]Checking Proxmox community catalog...[/dim]"
                     )
-                    template_volid = templates[0]["volid"]
+                    # Query aplinfo directly here rather than through
+                    # get_lxc_repo_catalog — that helper drops entries with
+                    # empty descriptions (a UX-list-display filter for the
+                    # interactive picker). We only need an exact filename
+                    # match, so we skip the description filter entirely. This
+                    # is important because Proxmox's aplinfo sometimes returns
+                    # entries with blank descriptions depending on when the
+                    # node last ran `pveam update`.
+                    try:
+                        raw_catalog = proxmox.nodes(node_name).aplinfo.get()
+                    except Exception as e:
+                        console.print(
+                            f"[red]✗ Could not query Proxmox catalog "
+                            f"on {node_name}: {e}[/red]"
+                        )
+                        sys.exit(1)
+                    match = next(
+                        (c for c in raw_catalog if c.get("template") == template_name),
+                        None,
+                    )
+                    if not match:
+                        console.print(
+                            f"[red]✗ Template '{template_name}' not found on "
+                            f"{node_name} AND not available in the Proxmox "
+                            f"community catalog.[/red]\n"
+                            f"  Either fix the template_name in the deployment "
+                            f"file, run the wizard interactively to pick a "
+                            f"different one, or stage the file manually with "
+                            f"`pveam download <storage> <template>` on the node."
+                        )
+                        sys.exit(1)
+                    # Pick a vztmpl-capable storage — prefer the one from the
+                    # JSON's template_volid, else fall back to the first
+                    # available on the node.
+                    dl_storages = get_vztmpl_storages(proxmox, node_name)
+                    if not dl_storages:
+                        console.print(
+                            f"[red]✗ Cannot download template — no storage pool "
+                            f"on {node_name} supports vztmpl content.[/red]"
+                        )
+                        sys.exit(1)
+                    dl_storage = storage if storage in dl_storages else dl_storages[0]
+                    console.print(
+                        f"  [dim]Auto-downloading {template_name} to "
+                        f"{node_name}:{dl_storage}...[/dim]"
+                    )
+                    try:
+                        task_id = download_lxc_template(
+                            proxmox, node_name, dl_storage, template_name,
+                        )
+                        with console.status(
+                            f"[bold green]Downloading {template_name} "
+                            f"(this may take a minute)..."
+                        ):
+                            wait_for_task(proxmox, node_name, task_id, timeout=300)
+                    except Exception as e:
+                        console.print(
+                            f"[red]✗ Auto-download of '{template_name}' "
+                            f"failed: {e}[/red]\n"
+                            f"  Stage it manually on the node: "
+                            f"`pveam download {dl_storage} {template_name}`"
+                        )
+                        sys.exit(1)
+                    # Re-fetch the template list and rewrite template_volid to
+                    # reflect where the download actually landed.
+                    templates = get_lxc_templates(proxmox, node_name)
+                    expected_volid = f"{dl_storage}:vztmpl/{template_name}"
+                    if not any(t["volid"] == expected_volid for t in templates):
+                        console.print(
+                            f"[red]✗ Download reported success but "
+                            f"'{expected_volid}' is not in the template "
+                            f"list. Aborting.[/red]"
+                        )
+                        sys.exit(1)
+                    template_volid = expected_volid
+                    console.print(
+                        f"  [green]✓ Downloaded {template_name} to "
+                        f"{dl_storage}[/green]"
+                    )
                 template_name = template_volid.split("/")[-1]
                 console.print(f"  [dim]Template (from deployment file): {template_name}[/dim]")
                 return {**s, "template_volid": template_volid, "template_name": template_name}

@@ -1,9 +1,26 @@
 ---
 # ============================================================
-# RedHat / Rocky Linux / AlmaLinux / CentOS Stream OS-specific variables
+# RedHat / Rocky Linux / AlmaLinux / CentOS Stream / Fedora / Oracle Linux
+# OS-specific variables
+#
 # Loaded automatically by post-deploy*.yml via:
 #   include_vars: "vars/{{ ansible_os_family }}.yml"
+#
 # Note: Many packages below require EPEL, enabled by pre-install-RedHat.yml
+#       on RHEL-rebuild distros (skipped on Fedora, where these pkgs are in
+#       the main repos).
+#
+# Package-name version conditionals:
+#   A few EPEL packages were renamed between EPEL 9 and EPEL 10:
+#     iotop  -> iotop-c   (rewrite in C; `iotop` package dropped from EPEL 10)
+#     p7zip  -> 7zip      (renamed to match upstream)
+#     arp-scan -> (gone)  (removed from EPEL 10 entirely)
+#   We split the package list into three groups: a common baseline that works
+#   on every supported RHEL-family version, an "older-names" set for RHEL 8/9,
+#   and a "modern-names" set for RHEL 10+ AND Fedora (Fedora's main repos
+#   adopted the modern names before EPEL 10 did). The composed `packages:`
+#   variable resolves to the right combination via Jinja on
+#   ansible_distribution_major_version at install time.
 # ============================================================
 
 ssh_service: sshd
@@ -16,7 +33,8 @@ user_shell: /bin/bash
 sshd_config_d_path: /etc/ssh/sshd_config.d
 ip_show_cmd: "ip -4 addr show scope global | awk '/inet / {print $2}'"
 
-packages:
+# Works on every supported RHEL-family version (8, 9, 10, Fedora 43+).
+packages_common:
   # --- Network tools ---
   - net-tools          # ifconfig, netstat, route, arp
   - iproute            # ip addr, ip route, ss, tc
@@ -30,8 +48,6 @@ packages:
   - tcpdump            # packet capture
   - iperf3             # network bandwidth testing (EPEL)
   - fping              # fast parallel ping (EPEL)
-  # arp-scan removed — not packaged in EPEL 10 anymore (gone in RHEL 10
-  # family). Install manually or `pip install scapy` for similar capability.
   - ethtool            # ethernet settings
   - iftop              # live bandwidth monitor (EPEL)
   - nload              # network load monitor (EPEL)
@@ -40,24 +56,23 @@ packages:
 
   # --- Text editors ---
   - nano
-  - vim-enhanced       # `vim` was renamed to `vim-enhanced` in RHEL 10 family
+  - vim-enhanced       # standard "full vim" pkg on all RHEL versions
 
   # --- Data/JSON/YAML tools ---
-  - jq                 # JSON processor (EPEL)
+  - jq                 # JSON processor (EPEL on RHEL; main on Fedora)
   - yamllint           # YAML linter (EPEL)
   - python3-jsonschema # JSON schema validation (EPEL)
 
   # --- Shell/script linting ---
   - ShellCheck         # EPEL
 
-  # --- Archive/compression tools ---
+  # --- Archive/compression tools (except 7zip — see version-specific) ---
   - zip
   - unzip
   - tar
   - gzip
   - bzip2
   - xz
-  - 7zip               # 7z (EPEL) — was `p7zip` on RHEL 8/9, renamed to `7zip` on RHEL 10
 
   # --- SSH tools ---
   - sshpass            # non-interactive SSH password auth (EPEL)
@@ -82,9 +97,8 @@ packages:
   - hdparm
   - smartmontools      # S.M.A.R.T. disk monitoring
 
-  # --- System monitoring & process tools ---
+  # --- System monitoring & process tools (except iotop — see version-specific) ---
   - htop               # EPEL
-  - iotop-c            # iotop was rewritten in C; `iotop-c` is the only package on RHEL 10
   - lsof
   - strace
   - sysstat            # sar, iostat, mpstat
@@ -111,3 +125,25 @@ packages:
   - at
   - cronie             # cron daemon
   - logrotate
+
+# Older EPEL package names — for RHEL 8 and RHEL 9 family (Rocky/Alma/CentOS
+# Stream/RHEL/Oracle Linux at majors 8 and 9). Fedora is excluded by version
+# number (Fedora majors are all ≥ 39, so they take the modern set below).
+packages_rhel_le_9:
+  - iotop              # original Python iotop — EPEL 8 and 9 ship it
+  - p7zip              # 7z archiver — EPEL 8 and 9 name (renamed to 7zip in EPEL 10)
+  - arp-scan           # ARP scanner — EPEL 8 and 9; removed from EPEL 10 entirely
+
+# Modern names — for RHEL 10 family AND Fedora (all Fedora majors are
+# numerically ≥ 10).
+packages_rhel_ge_10:
+  - iotop-c            # C rewrite that replaced iotop in EPEL 10 and Fedora main
+  - 7zip               # was `p7zip` in EPEL 9; renamed in EPEL 10 and Fedora main
+  # arp-scan removed — gone from EPEL 10; install via `pip install scapy`
+  # or skip if not needed. (Fedora main repos do still have arp-scan as of
+  # F44 but we keep parity with EPEL 10 to avoid Fedora-only special-casing.)
+
+# Composed install list — selects per major version at evaluation time.
+# Ansible facts are gathered before any task that references this, so
+# ansible_distribution_major_version is reliably set.
+packages: "{{ packages_common + (packages_rhel_le_9 if ansible_distribution_major_version | int <= 9 else packages_rhel_ge_10) }}"
