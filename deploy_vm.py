@@ -174,6 +174,42 @@ def lookup_url_in_catalog(catalog: list[dict], filename: str) -> str | None:
     return None
 
 
+def lookup_cpu_baseline_in_catalog(catalog: list[dict], filename: str) -> str | None:
+    """Find the optional `cpu_baseline` microarch hint for a cloud image.
+
+    Catalog entries can declare a minimum QEMU `-cpu` model required for the
+    OS to boot (e.g. Rocky 10 requires `x86-64-v3` per Red Hat's RHEL 10
+    baseline raise). When set, `deploy_vm.py` uses this as the cpu_type
+    default unless the deployment JSON explicitly overrides it.
+    """
+    for img in catalog:
+        if img.get("filename") == filename:
+            return img.get("cpu_baseline")
+    return None
+
+
+def resolve_cpu_type(deploy: dict, vm_cfg: dict, catalog: list[dict],
+                     image_filename: str) -> tuple[str, str]:
+    """Resolve effective cpu_type per the 3-tier resolution order.
+
+    Highest-wins:
+      1. Deployment JSON `cpu_type` — explicit operator override
+      2. Catalog `cpu_baseline` for this image — image-aware default
+      3. `config.yaml` `vm.cpu_type` — cluster-wide default
+         (falls back to `x86-64-v2-AES` if also absent)
+
+    Returns (cpu_type, source) where `source` is a short string describing
+    which tier matched. Useful for logging the choice back to the operator.
+    """
+    explicit = deploy.get("cpu_type")
+    if explicit:
+        return explicit, "deployment JSON cpu_type"
+    catalog_baseline = lookup_cpu_baseline_in_catalog(catalog, image_filename)
+    if catalog_baseline:
+        return catalog_baseline, f"cloud-images.yaml cpu_baseline ({image_filename})"
+    return vm_cfg.get("cpu_type", "x86-64-v2-AES"), "config.yaml vm.cpu_type"
+
+
 def run_validate(args) -> None:
     """Run --validate checks, print a rich report, and exit 0 or 1."""
     run_validate_common(args, validate_vm_deployment)
@@ -538,7 +574,10 @@ def main() -> None:
     nic_driver = vm_cfg.get("nic_driver", "virtio")
 
     deploy = load_deployment_file(args.deploy_file) if args.deploy_file else {}
-    # cpu_type: per-deployment override wins; otherwise fall back to vm config default.
+    # cpu_type: initial guess from deploy + vm config. Final value gets re-resolved
+    # inside step_confirm once the image catalog (and selected image filename) are
+    # known, because the catalog can carry a `cpu_baseline` field — see
+    # resolve_cpu_type() above for the full 3-tier resolution order.
     # RHEL 10 family (Rocky 10, Alma 10, CentOS Stream 10) requires x86-64-v3, which
     # not every Proxmox node supports — see check_node_cpu_baseline below.
     cpu_type = deploy.get("cpu_type") or vm_cfg.get("cpu_type", "x86-64-v2-AES")
@@ -671,6 +710,20 @@ def main() -> None:
         return {**s, "storage": storage}
 
     def step_confirm(s):
+        # Resolve cpu_type now that the catalog and chosen image are known.
+        # The outer-scope cpu_type was an initial guess (deploy JSON or vm
+        # config default); the catalog's cpu_baseline field for this image
+        # is the middle tier in resolve_cpu_type() — see resolve_cpu_type().
+        nonlocal cpu_type
+        cpu_type, cpu_type_source = resolve_cpu_type(
+            deploy, vm_cfg, s.get("catalog", []), s.get("image_filename", "")
+        )
+        if cpu_type_source != "config.yaml vm.cpu_type":
+            console.print(
+                f"  [dim]cpu_type resolved to [bold]{cpu_type}[/bold] "
+                f"(source: {cpu_type_source})[/dim]"
+            )
+
         # Read SSH public key (non-interactive file read)
         pve = cfg["proxmox"]
         ssh_key_path = os.path.expanduser(pve.get("ssh_key", "~/.ssh/id_rsa"))
