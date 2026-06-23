@@ -1537,3 +1537,89 @@ python3 push-key.py --deploy-file deployments/lxc/myserver.json --user all
 - `--user all`: derive `addusername` from `cfg["defaults"]["addusername"]`. Handle both users in a single SSH session — two `authorized_keys` operations, one connection.
 - Auth order: try key auth first (`~/.ssh/id_rsa` from config). If that fails, fall back to password from deployment JSON. If both fail, report error and skip.
 - History log entry: `"action": "push-key"` with the key fingerprint (not the full key body) — use `ssh-keygen -lf <keyfile>` via subprocess or compute it from the key bytes directly.
+
+---
+
+## Alpine and FreeBSD Ansible Family Support — **Implemented (both fully working end-to-end)**
+
+> **Status: Implemented 2026-06-21.**
+> - **Alpine**: full support. `ansible/vars/Alpine.yml` + `tasks/pre-install-Alpine.yml` + `tasks/upgrade-Alpine.yml` added. Apk community repo is auto-enabled if missing. Standard package list mapped to Alpine names (`py3-pip`, `bind-tools`, `procps`, etc.). Cloud-init image ships with qga so DHCP discovery works.
+> - **FreeBSD**: ✓ Fully working end-to-end as of 2026-06-22. BUG-010 fixed: combined the `.xz` decompression fix, new `modules/freebsd_firstboot.py` serial-console automation (logs in to passwordless root, writes `/etc/rc.conf` + sshd drop-in + Python install + symlink), and several Ansible playbook fixes (skip cloud-init result wait, FreeBSD-specific `pw` password set, corrected package names). Static IP only (FreeBSD's image doesn't ship qga; DHCP support would need an alternate IP-discovery path). Validated: test-freebsd deployed clean in 8m 00s.
+> - Hard-coded Linux paths in `post-deploy.yml` / `post-deploy-vm.yml` were refactored to use per-OS vars: `snmpd_conf_path`, `snmp_mibs_dir`, `sshd_config_d_path`, `user_shell`, `ip_show_cmd`. Existing Debian/RedHat/Suse vars files gained these fields with their Linux defaults — no behavior change for existing deploys.
+
+### Follow-up work (not blocking)
+
+- **FreeBSD qga bootstrap.** Either bake qga into the cloud image at first-cache time on the Proxmox node, or add a deploy-time hook that does the install + rc.conf edit + reboot before the deploy considers itself done. Until then, FreeBSD = static IP only.
+- **Alpine python3-jsonschema / shellcheck.** Both exist in Alpine community as `py3-jsonschema` and `shellcheck` but were left out of the standard list to keep parity with what's strictly needed. Add if anyone wants them.
+- **FreeBSD strace/iotop.** Both require dtrace tooling rather than dedicated ports; not worth special-casing unless a user asks.
+
+---
+
+## Per-Image CPU Baseline Auto-Detection
+
+Today, RHEL 10 family deploys (Rocky 10, Alma 10, CentOS Stream 10) require the operator to know to set `"cpu_type": "x86-64-v3"` in the deployment JSON — otherwise the VM boot-loops on pre-Haswell hosts (BUG-006). The `check_node_cpu_baseline` preflight catches the *node* mismatch but assumes the operator already knew which `cpu_type` to ask for.
+
+A more user-friendly design: tag each entry in `cloud-images.yaml` with a `cpu_baseline` field, and have `deploy_vm.py` auto-apply it as `cpu_type` whenever the deployment JSON doesn't explicitly override it.
+
+### Schema
+
+```yaml
+- name: "Rocky Linux 10"
+  url: "https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud.latest.x86_64.qcow2"
+  filename: "Rocky-10-GenericCloud.latest.x86_64.qcow2"
+  cpu_baseline: x86-64-v3           # NEW — applies to every deploy of this image
+```
+
+When absent, behavior stays the same as today (use `vm.cpu_type` from `config.yaml`).
+
+### Resolution order (highest wins)
+
+1. Deployment JSON `cpu_type` field — explicit override
+2. Catalog `cpu_baseline` field — image-aware default
+3. `config.yaml` `vm.cpu_type` — cluster-wide default
+
+### Pairs naturally with auto-node-pick
+
+If the chosen node fails `check_node_cpu_baseline`, surface a "node X can't run this image; try Y or Z" recommendation by querying every node's `cpuinfo.flags` once at startup and filtering the node-picker list.
+
+### Initial population
+
+| Catalog entries | Suggested `cpu_baseline` |
+|---|---|
+| Rocky 10, AlmaLinux 10, CentOS Stream 10, Oracle Linux 10 (when added) | `x86-64-v3` |
+| Everything else currently in the catalog | (leave unset — keeps the `config.yaml` default) |
+
+---
+
+## RHEL-Version-Conditional Package Lists
+
+`ansible/vars/RedHat.yml` is currently a single flat package list. BUG-008 forced `vim` → `vim-enhanced`, `iotop` → `iotop-c`, `p7zip` → `7zip` for Rocky 10, but those new names may not exist on Rocky 8 (e.g. EPEL 8 still ships `p7zip` not `7zip`). The current fix assumes Rocky 8 deploys will keep working; in practice they may break the next time someone deploys one.
+
+### Fix
+
+Split `ansible/vars/RedHat.yml`'s `packages:` list into version-conditional layers, or use Ansible's `when: ansible_distribution_major_version|int >= N` on specific package add/remove deltas:
+
+```yaml
+packages_common:
+  - net-tools
+  - iproute
+  # ... (every name that works on RHEL 8, 9, AND 10)
+
+packages_rhel_le_9:
+  - vim
+  - iotop
+  - p7zip
+  - arp-scan
+
+packages_rhel_ge_10:
+  - vim-enhanced
+  - iotop-c
+  - 7zip
+  # (arp-scan removed entirely in EPEL 10)
+```
+
+Then in `post-deploy.yml`/`post-deploy-vm.yml`, compose the install list based on `ansible_distribution_major_version`. Same approach extends to Debian (where `snmp-mibs-downloader` exists on Bookworm but not Trixie) and openSUSE (where Leap 15.x had `nmap` and `dstat` but Leap 16 doesn't).
+
+### Why not now
+
+The current shipping fix (use RHEL 10 names everywhere) is good enough as long as nobody actually deploys Rocky 8. Validation pass needed before promoting this to "must-do" — confirm whether `vim-enhanced` / `iotop-c` / `7zip` actually break on Rocky 8 or whether they're still aliased.
