@@ -85,6 +85,7 @@ Poiesis/
 │   ├── decomm.py                  # Shared decommission pipeline steps
 │   ├── bigip.py                   # BIG-IP qcow resolve/extract, SFTP+importdisk, multi-NIC attach
 │   ├── bigip_firstboot.py         # BIG-IP serial-console automation (login/password/mgmt-ip/license)
+│   ├── freebsd_firstboot.py       # FreeBSD serial-console automation (network/password/SSH key/python install — BASIC-CLOUDINIT ships nuageinit, not real cloud-init)
 │   ├── ansible.py                 # Ansible integration helpers
 │   └── bind.py                    # BIND DNS integration helpers
 ├── appliance-images/              # Licensed vendor qcow images (gitignored except README.md)
