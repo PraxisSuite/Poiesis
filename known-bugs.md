@@ -11,7 +11,7 @@ work. For user-reported bugs or feature requests, open an issue at:
 https://github.com/PraxisSuite/Poiesis/issues
 
 **Conventions:**
-- Bug IDs are sequential and never reused. Next ID: **BUG-011**.
+- Bug IDs are sequential and never reused. Next ID: **BUG-012**.
 - New bugs go into the `# Known Bugs / Issues` section with the next available ID.
 - When a bug is fixed, move it to the **top** of the `# FIXED Bugs / Issues` section
   (most recently fixed first) and update Status, Date Fixed, and add a Fix Applied section.
@@ -56,6 +56,77 @@ If the bug is open, describe any workaround. If none exists, state that explicit
 
 ---
 # Known Bugs / Issues
+---
+
+## BUG-011 — `deploy_lxc.py --silent` silently substitutes a different LXC template (potentially a different OS family) when the requested one isn't downloaded
+
+**Status:** Open
+**Severity:** High (silent — the deploy "succeeds" but lands an entirely different OS than the operator asked for; downstream Ansible loads the wrong `vars/<family>.yml`, downstream cleanup tags the wrong OS, redeploys from the JSON drift further)
+**Affected script:** `deploy_lxc.py` (silent / `--deploy-file` path)
+**First observed:** 2026-06-23, attempting to deploy `test-rocky9-lxc` (with `template_name: rockylinux-9-default_20240912_amd64.tar.xz`) on `proxmoxb01` and `test-rocky10-lxc` on `proxmox01`. Neither Rocky template was downloaded on the target node. Both deploys silently substituted `ubuntu-26.04-standard_26.04-1_amd64.tar.zst` and proceeded as Ubuntu LXCs.
+**Date Added:** 2026-06-23
+
+### Symptom
+
+Deployment JSON specifies a Rocky 10 LXC template:
+
+```json
+{
+  "hostname": "test-rocky10-lxc",
+  "template_volid": "local:vztmpl/rockylinux-10-default_20251001_amd64.tar.xz",
+  "template_name": "rockylinux-10-default_20251001_amd64.tar.xz"
+}
+```
+
+The deploy log emits a one-line warning, then carries on with a totally different template:
+
+```
+Warning: Template 'local:vztmpl/rockylinux-10-default_20251001_amd64.tar.xz' not found on proxmox01. Using first available.
+  Template (from deployment file): ubuntu-26.04-standard_26.04-1_amd64.tar.zst
+```
+
+The summary table that follows correctly shows the substituted template, but in silent / batch mode that summary scrolls past too fast to notice. The deployment completes "successfully" (DNS registered, inventory updated, JSON written) — but the resulting LXC is Ubuntu 26.04, not Rocky 10. The deployment JSON on disk gets *rewritten* to reference the Ubuntu template, hiding the original intent.
+
+### Root Cause (suspected)
+
+In the silent / file-driven code path inside `deploy_lxc.py`, the template-resolution logic falls through to "first available" when the configured `template_volid` isn't present on the target node, instead of failing fast with a clear error. The warning is logged but the deploy isn't gated on it.
+
+In interactive mode the wizard presents a picker and the operator chooses, so this fallback only matters in `--silent` (which is what `deploy.py --batch` uses).
+
+### Impact
+
+- **Operator confusion:** the JSON, hostname, DNS record, and inventory entry all say `test-rocky10-lxc`, but the actual container is Ubuntu. Anyone reading the deployments directory later sees a perfectly normal Rocky-named LXC; only the contents disagree.
+- **Ansible misroute:** post-deploy detects `ansible_os_family == 'Debian'` and applies the Debian playbook variants — so the configuration looks "right" for the substituted OS. There's no failure to surface the mismatch.
+- **Future redeploys diverge:** the JSON is rewritten with the substituted template on disk. A `--purge` / re-deploy cycle now legitimately redeploys an Ubuntu host into a `test-rocky10-lxc.json` file.
+- **Cluster cleanup confused:** `cleanup_tagged.py` shows the host with its hostname, but its tags / packages are from the wrong family.
+
+### Fix shape (not yet implemented)
+
+**Auto-download is the chosen path** (operator preference, 2026-06-23). When `deploy_lxc.py --silent` finds that the requested template isn't downloaded on the target node, it should:
+
+1. Query Proxmox's community catalog (`pveam available --section system`) for an exact filename match.
+2. If a match exists, `pveam download <storage> <template>` to that node, poll the download task to completion, then proceed with the deploy. Log a clear `Downloading missing template <name> to <node>:<storage>...` line so the operator can see what happened.
+3. If no match exists in the catalog either, **hard fail** with `Template '<x>' not found on <node> and not available in Proxmox catalog. Run interactively to pick a different template, or stage it manually.`
+
+This composes well: most "missing template" cases are fresh nodes where the right name *does* exist upstream, so the auto-download path resolves them silently and correctly. The hard-fail only fires when the operator has truly fabricated a template name, which is the case where surprise OS-family substitution is most dangerous.
+
+The current `--interactive` wizard already handles missing templates correctly (it asks the user to pick OR offers to download from the same catalog), so the fix is scoped to the `--silent` dispatch path in `deploy_lxc.py`. The existing template-download helper in `modules/proxmox.py` (`download_lxc_template`) — used today by the interactive wizard's "Download from Proxmox repo..." option — is the natural building block to reuse.
+
+**Out of scope:** under no circumstances should the current "fall through to first available" behavior remain. Even if auto-download fails for some unrelated reason (network blip, storage permission, etc.), the deploy must abort, not silently substitute a different OS family.
+
+### Workaround
+
+Pre-download the required LXC templates on every node before running a batch deploy:
+
+```bash
+# On each target Proxmox node:
+pveam update
+pveam download local rockylinux-10-default_20251001_amd64.tar.xz
+pveam download local rockylinux-9-default_20240912_amd64.tar.xz
+```
+
+Or use VM-based deploys (cloud images don't have the same fallback problem — `deploy_vm.py`'s image cache is per-image and per-storage, not per-OS-family).
+
 ---
 
 
