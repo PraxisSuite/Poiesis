@@ -77,6 +77,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
+from modules.freebsd_firstboot import configure_via_serial as freebsd_configure_via_serial
 from modules.lib import (
     load_config,
     connect_proxmox,
@@ -892,6 +893,39 @@ def main() -> None:
     except Exception as e:
         console.print(f"[red]✗ Failed to start VM: {e}[/red]")
         sys.exit(1)
+
+    # ─── FreeBSD first-boot serial-console configuration ───
+    # FreeBSD's BASIC-CLOUDINIT image ships with nuageinit (not real cloud-init),
+    # which doesn't apply Proxmox's static IP / password / SSH key. We drive the
+    # serial console here to write /etc/rc.conf, set the root password, and
+    # inject the deploy SSH key — so the rest of the flow (Step 4 onward) sees
+    # a normally-configured VM. Detection: image filename starts with FreeBSD-.
+    if image_filename.startswith("FreeBSD-"):
+        console.print("[bold green]─── FreeBSD first-boot (serial console) ───[/bold green]")
+        ssh_pub_key_text = ""
+        try:
+            with open(pub_key_path, "r") as f:
+                ssh_pub_key_text = f.read().strip()
+        except Exception as e:
+            console.print(f"[red]✗ Could not read SSH public key from {pub_key_path}: {e}[/red]")
+            sys.exit(1)
+        # cfg["defaults"]["nameserver"] is a space-separated string, e.g.
+        # "192.168.1.4 192.168.1.5". Split into list for freebsd_firstboot.
+        dns_servers = (cfg.get("defaults", {}).get("nameserver", "") or "").split()
+        try:
+            freebsd_configure_via_serial(
+                cfg=cfg, node_name=node_name, vmid=next_vmid,
+                hostname=hostname, ip=ip_address, prefix_len=prefix_len,
+                gateway=gateway, dns_servers=dns_servers,
+                password=password, ssh_pub_key=ssh_pub_key_text,
+            )
+        except Exception as e:
+            console.print(f"[red]✗ FreeBSD serial-console configuration failed: {e}[/red]")
+            console.print(
+                "  [dim]Inspect manually:  ssh root@<proxmox-node> "
+                f"'qm terminal {next_vmid}'[/dim]"
+            )
+            sys.exit(1)
 
     # ═══════════════════════════════════════════
     # Step 4/6: Wait for SSH (discover IP first if DHCP)

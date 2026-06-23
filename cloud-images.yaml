@@ -32,9 +32,12 @@
 #   - Alpine Linux    : .qcow2 files — URL is version-specific (no "latest" redirect).
 #                       Check https://alpinelinux.org/cloud/ for current release.
 #   - Arch Linux      : .qcow2 file — rolling release, filename is stable ("latest").
-#   - FreeBSD         : .qcow2.xz file — URL is version-specific. The image ships
-#                       compressed; decompress with `xz -d` before use or check if your
-#                       Proxmox version supports direct .xz import.
+#   - FreeBSD         : .qcow2.xz file — URL is version-specific. Poiesis auto-
+#                       decompresses `.xz` files on the Proxmox node after download
+#                       (xz -dkf), so the catalog filename keeps the `.xz` suffix
+#                       matching the upstream download. FreeBSD VMs require a
+#                       static IP and use serial-console first-boot automation
+#                       (modules/freebsd_firstboot.py) — see docs/deploy-vm.md.
 #                       Check https://download.freebsd.org/releases/VM-IMAGES/ for current.
 #   - All listed distros support cloud-init natively
 #   - qm importdisk handles both .img and .qcow2 transparently
@@ -161,13 +164,24 @@ cloud_images:
 
   # ── FreeBSD ──────────────────────────────────────────────
   # NOTE: FreeBSD cloud image URL is version-specific and ships compressed (.qcow2.xz).
-  # Decompress with `xz -d <file>` before importing, or check if your Proxmox version
-  # supports direct .xz import. Check https://download.freebsd.org/releases/VM-IMAGES/
+  # Poiesis auto-decompresses .xz on the Proxmox node (`xz -dkf`) before
+  # `qm importdisk`; the catalog filename keeps the `.xz` suffix to match the
+  # upstream download. Check https://download.freebsd.org/releases/VM-IMAGES/
   # for the current release and exact filename.
-  - name: "FreeBSD 15 (UFS)"
-    url: "https://download.freebsd.org/releases/VM-IMAGES/15.0-RELEASE/amd64/Latest/FreeBSD-15.0-RELEASE-amd64-ufs.qcow2.xz"
-    filename: "FreeBSD-15.0-RELEASE-amd64-ufs.qcow2.xz"
+  # NOTE: Use the BASIC-CLOUDINIT-* variants — the plain -ufs image doesn't
+  # come with even nuageinit configured properly. (Reminder: BASIC-CLOUDINIT
+  # is misleadingly named — it ships `nuageinit`, NOT real cloud-init, which
+  # is why Poiesis uses serial-console first-boot automation for FreeBSD; see
+  # modules/freebsd_firstboot.py and known-bugs.md BUG-010.)
+  # NOTE: FreeBSD cloud images do not ship qemu-guest-agent and nuageinit
+  # ignores Proxmox's network-config. **FreeBSD VMs require a static IP**
+  # (ip_address, prefix_len, gateway in the deployment JSON). The serial-
+  # console firstboot writes /etc/rc.conf, sets the root password + SSH key,
+  # installs python311, and restarts networking — no manual prep needed.
+  - name: "FreeBSD 15 (UFS, cloud-init)"
+    url: "https://download.freebsd.org/releases/VM-IMAGES/15.0-RELEASE/amd64/Latest/FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz"
+    filename: "FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz"
 
-  - name: "FreeBSD 14 (UFS)"
-    url: "https://download.freebsd.org/releases/VM-IMAGES/14.4-RELEASE/amd64/Latest/FreeBSD-14.4-RELEASE-amd64.qcow2.xz"
-    filename: "FreeBSD-14.4-RELEASE-amd64.qcow2.xz"
+  - name: "FreeBSD 14 (UFS, cloud-init)"
+    url: "https://download.freebsd.org/releases/VM-IMAGES/14.4-RELEASE/amd64/Latest/FreeBSD-14.4-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz"
+    filename: "FreeBSD-14.4-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz"

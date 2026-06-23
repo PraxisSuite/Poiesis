@@ -519,8 +519,42 @@ def import_cloud_image(cfg: dict, proxmox: ProxmoxAPI, node_name: str, vmid: int
         else:
             console.print(f"  [dim]Using existing image: {image_storage_name}:{image_filename}[/dim]")
 
+        # Decompress .xz cloud images (FreeBSD ships qcow2.xz; qm importdisk
+        # can't read xz-wrapped files — without this step the disk ends up
+        # containing the literal XZ-format bytes and the VM PXE-loops because
+        # no MBR is found).
+        import_file = image_file
+        if image_file.endswith(".xz"):
+            decompressed_file = image_file[: -len(".xz")]
+            _, out_check, _ = run_ssh_cmd(
+                ssh, f'test -f {decompressed_file} && echo exists || echo missing'
+            )
+            if "exists" in out_check and not image_refresh:
+                console.print(
+                    f"  [dim]Using existing decompressed image at "
+                    f"{decompressed_file}[/dim]"
+                )
+            else:
+                console.print(
+                    f"  [dim]Decompressing {image_filename} "
+                    f"(xz -dk; may take 30–60s for a ~600 MB image)...[/dim]"
+                )
+                # -d decompress, -k keep the original .xz so the cache stays warm
+                # for redeploys; -f overwrites any stale partial decompression.
+                exit_code, out, err = run_ssh_cmd(
+                    ssh, f"xz -dkf {image_file}"
+                )
+                if exit_code != 0:
+                    raise RuntimeError(
+                        f"xz -dkf {image_file} failed (exit {exit_code}): {err or out}"
+                    )
+                console.print(
+                    f"  [green]✓ Decompressed to {decompressed_file}[/green]"
+                )
+            import_file = decompressed_file
+
         console.print(f"  [dim]Importing disk into VM {vmid} on storage '{disk_storage}'...[/dim]")
-        exit_code, out, err = run_ssh_cmd(ssh, f"qm importdisk {vmid} {image_file} {disk_storage}")
+        exit_code, out, err = run_ssh_cmd(ssh, f"qm importdisk {vmid} {import_file} {disk_storage}")
         if exit_code != 0:
             raise RuntimeError(f"qm importdisk failed (exit {exit_code}): {err or out}")
         console.print(f"  [green]✓ Disk imported[/green]")
@@ -540,6 +574,12 @@ def write_guest_agent_snippet(cfg: dict, node_name: str, vmid: int) -> str:
     Returns the cicustom value to pass to the Proxmox VM config, e.g.:
       "vendor=local:snippets/vm-113-userdata.yaml"
     """
+    # The runcmd block detects the init system at runtime rather than assuming
+    # systemd — Alpine cloud-init images install qga via apk but fail to start
+    # it because `systemctl` doesn't exist (Alpine uses OpenRC). This single
+    # snippet handles every Linux init system we deploy: systemd (Debian/RHEL/
+    # Suse/Fedora/etc.), OpenRC (Alpine), and the fall-through `service` shim
+    # used by older sysvinit-style hosts.
     snippet = (
         "#cloud-config\n"
         "package_update: false\n"
@@ -547,7 +587,15 @@ def write_guest_agent_snippet(cfg: dict, node_name: str, vmid: int) -> str:
         "packages:\n"
         "  - qemu-guest-agent\n"
         "runcmd:\n"
-        "  - systemctl enable --now qemu-guest-agent\n"
+        "  - |\n"
+        "    if command -v systemctl >/dev/null 2>&1; then\n"
+        "      systemctl enable --now qemu-guest-agent\n"
+        "    elif command -v rc-update >/dev/null 2>&1; then\n"
+        "      rc-update add qemu-guest-agent default\n"
+        "      rc-service qemu-guest-agent start\n"
+        "    elif command -v service >/dev/null 2>&1; then\n"
+        "      service qemu-guest-agent start || true\n"
+        "    fi\n"
     )
     snippet_name = f"vm-{vmid}-userdata.yaml"
     snippet_path = f"/var/lib/vz/snippets/{snippet_name}"

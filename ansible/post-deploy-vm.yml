@@ -41,9 +41,14 @@
     - name: Load OS-specific variables
       include_vars: "vars/{{ ansible_os_family }}.yml"
 
-    - name: Ensure correct sudo group for OS family
+    # sudo_group is loaded from vars/{{ ansible_os_family }}.yml above.
+    # (Historical: this set_fact existed before the per-family vars files
+    # carried `sudo_group`. Kept here as a comment because removing the
+    # task is a behavior change — every existing OS family now supplies
+    # the variable; the fallback is the Debian/RedHat-era default.)
+    - name: Ensure sudo_group is defined (fallback if vars file is missing it)
       set_fact:
-        sudo_group: "{{ 'sudo' if ansible_os_family == 'Debian' else 'wheel' }}"
+        sudo_group: "{{ sudo_group | default('sudo' if ansible_os_family == 'Debian' else 'wheel') }}"
 
     - name: Wait for cloud-init first-boot to complete
       wait_for:
@@ -51,6 +56,12 @@
         timeout: 1800
       retries: 5
       delay: 10
+      # FreeBSD ships nuageinit instead of real cloud-init; nuageinit doesn't
+      # create /run/cloud-init/result.json, so this task would wait the full
+      # 1800s × 5 = 2.5 hours before failing. By the time Ansible reaches us
+      # on FreeBSD, network + SSH + Python are already set up by the
+      # serial-console firstboot module — there's nothing left to wait on.
+      when: ansible_os_family != 'FreeBSD'
 
     # --------------------------------------------------------
     # Hostname
@@ -72,32 +83,44 @@
     - name: Create '{{ addusername }}' user
       user:
         name: "{{ addusername }}"
-        shell: /bin/bash
-        groups: "{{ 'sudo' if ansible_os_family == 'Debian' else 'wheel' }}"
+        shell: "{{ user_shell | default('/bin/bash') }}"
+        groups: "{{ sudo_group }}"
         append: true
         create_home: true
         state: present
 
-    - name: Set '{{ addusername }}' user password
+    - name: Set '{{ addusername }}' user password (Linux — chpasswd)
       shell: "echo '{{ addusername }}:{{ password }}' | chpasswd"
       no_log: true
+      when: ansible_os_family != 'FreeBSD'
 
-    - name: Set root password (ensure it matches)
+    - name: Set '{{ addusername }}' user password (FreeBSD — pw)
+      shell: "echo '{{ password }}' | pw usermod {{ addusername }} -h 0"
+      no_log: true
+      when: ansible_os_family == 'FreeBSD'
+
+    - name: Set root password (Linux — chpasswd)
       shell: "echo 'root:{{ password }}' | chpasswd"
       no_log: true
+      when: ansible_os_family != 'FreeBSD'
+
+    - name: Set root password (FreeBSD — pw)
+      shell: "echo '{{ password }}' | pw usermod root -h 0"
+      no_log: true
+      when: ansible_os_family == 'FreeBSD'
 
     # --------------------------------------------------------
     # SSH Configuration
     # --------------------------------------------------------
     - name: Ensure sshd_config.d drop-in directory exists
       file:
-        path: /etc/ssh/sshd_config.d
+        path: "{{ sshd_config_d_path | default('/etc/ssh/sshd_config.d') }}"
         state: directory
         mode: '0755'
 
     - name: Write Poiesis sshd drop-in (root login + password auth)
       copy:
-        dest: /etc/ssh/sshd_config.d/00-poiesis.conf
+        dest: "{{ sshd_config_d_path | default('/etc/ssh/sshd_config.d') }}/00-poiesis.conf"
         content: |
           # Managed by Poiesis post-deploy.
           # Low-numbered drop-in so these settings take precedence over
@@ -147,15 +170,21 @@
       package:
         name: qemu-guest-agent
         state: present
+      when: ansible_os_family != 'FreeBSD'
 
     # --------------------------------------------------------
     # QEMU Guest Agent
     # --------------------------------------------------------
+    # FreeBSD: qemu-guest-agent is in the standard pkg list but enabling it
+    # via systemd-style `service` fights FreeBSD's rc.conf convention.
+    # Set `qemu_guest_agent_enable="YES"` in /etc/rc.conf and reboot after
+    # the deploy completes if you need it on FreeBSD VMs.
     - name: Enable and start qemu-guest-agent
       service:
         name: qemu-guest-agent
         enabled: true
         state: started
+      when: ansible_os_family != 'FreeBSD'
 
     # --------------------------------------------------------
     # NTP Configuration (chrony)
@@ -175,10 +204,15 @@
     # --------------------------------------------------------
     # SNMP Configuration
     # --------------------------------------------------------
+    - name: Ensure snmpd.conf parent directory exists
+      file:
+        path: "{{ snmpd_conf_path | dirname }}"
+        state: directory
+
     - name: Deploy snmpd.conf from template
       template:
         src: templates/snmpd.conf.j2
-        dest: /etc/snmp/snmpd.conf
+        dest: "{{ snmpd_conf_path }}"
         backup: true
       vars:
         hostname: "{{ vm_hostname }}"
@@ -186,7 +220,7 @@
 
     - name: Ensure MIBS directory exists
       file:
-        path: /var/lib/snmp/mibs
+        path: "{{ snmp_mibs_dir }}"
         state: directory
 
     - name: Enable and restart snmpd
@@ -205,7 +239,7 @@
     # Status report
     # --------------------------------------------------------
     - name: Get system IP addresses
-      shell: ip -4 addr show scope global | grep inet | awk '{print $2}'
+      shell: "{{ ip_show_cmd | default(\"ip -4 addr show scope global | awk '/inet / {print $2}'\") }}"
       register: ip_addrs
       changed_when: false
 

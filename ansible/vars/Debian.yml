@@ -9,6 +9,14 @@ ssh_service: ssh
 sudo_group: sudo
 chrony_conf_path: /etc/chrony/chrony.conf
 chrony_service: chrony
+snmpd_conf_path: /etc/snmp/snmpd.conf
+snmp_mibs_dir: /var/lib/snmp/mibs
+user_shell: /bin/bash
+sshd_config_d_path: /etc/ssh/sshd_config.d
+# Command that prints one IPv4 address per non-loopback interface, used by the
+# final "Get system IP addresses" task. Linux distros use iproute2; FreeBSD
+# uses ifconfig.
+ip_show_cmd: "ip -4 addr show scope global | awk '/inet / {print $2}'"
 
 packages:
   # --- Network tools ---

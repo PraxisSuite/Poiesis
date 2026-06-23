@@ -1,34 +1,41 @@
 ---
 # ============================================================
-# SUSE / openSUSE Leap / Tumbleweed OS-specific variables
+# Alpine Linux OS-specific variables
 # Loaded automatically by post-deploy*.yml via:
 #   include_vars: "vars/{{ ansible_os_family }}.yml"
+# Note: Alpine cloud-init images ship with cloud-init and qemu-guest-agent.
+#       Packages live in main + community repos (both enabled by default
+#       on cloud images).
 # ============================================================
 
 ssh_service: sshd
 sudo_group: wheel
-chrony_conf_path: /etc/chrony.conf
+chrony_conf_path: /etc/chrony/chrony.conf
 chrony_service: chronyd
 snmpd_conf_path: /etc/snmp/snmpd.conf
 snmp_mibs_dir: /var/lib/snmp/mibs
+# Bash isn't in Alpine's `apk` base — it comes from the package list below.
+# We still set the additional user's shell to /bin/bash so post-deploy
+# experience matches the other distros once bash is installed.
 user_shell: /bin/bash
 sshd_config_d_path: /etc/ssh/sshd_config.d
 ip_show_cmd: "ip -4 addr show scope global | awk '/inet / {print $2}'"
 
 packages:
+  # --- Shell baseline ---
+  - bash               # required so /bin/bash user shell works
+
   # --- Network tools ---
-  - net-tools          # ifconfig, netstat, route, arp
-  - iproute2           # ip addr, ip route, ss, tc
-  # nmap removed — not in repo-oss on Leap 16; install from
-  # network:utilities OBS repo manually if needed.
-  - iputils            # ping, arping
-  - traceroute
+  - net-tools          # ifconfig (limited on busybox; full pkg installs GNU coreutils flavor)
+  - iproute2           # full ip command (Alpine has busybox `ip` by default, but iproute2 adds tc etc.)
+  - nmap               # port scanner
+  - iputils            # ping, arping, traceroute
   - mtr                # combined ping+traceroute
-  - bind-utils         # dig, nslookup, host
+  - bind-tools         # dig, nslookup, host  (Alpine name; not bind-utils)
   - netcat-openbsd     # nc - network utility
   - socat              # advanced netcat
   - tcpdump            # packet capture
-  # iperf3 not in default Leap repos — needs network:utilities OBS repo
+  - iperf3             # network bandwidth testing
   - fping              # fast parallel ping
   - arp-scan           # ARP scanner
   - ethtool            # ethernet settings
@@ -43,11 +50,10 @@ packages:
 
   # --- Data/JSON/YAML tools ---
   - jq                 # JSON processor
-  # python3-yamllint, python3-jsonschema removed — not packaged in repo-oss
-  # on Leap 16. Install via `pip install yamllint jsonschema` if needed.
-
-  # --- Shell/script linting ---
-  - ShellCheck
+  - yamllint           # YAML linter (community repo)
+  # python3-jsonschema and shellcheck are in Alpine but under different names;
+  # add as `py3-jsonschema` and `shellcheck` if needed — left out to keep
+  # the standard set minimal and matching upstream Alpine pkg names.
 
   # --- Archive/compression tools ---
   - zip
@@ -60,17 +66,16 @@ packages:
 
   # --- SSH tools ---
   - sshpass            # non-interactive SSH password auth
-  - openssh-clients
+  - openssh-client
 
   # --- NTP client ---
   - chrony
 
   # --- NFS client ---
-  - nfs-client
-  - nfs4-acl-tools
+  - nfs-utils
 
   # --- SNMP ---
-  - net-snmp           # includes both daemon and utilities on SUSE
+  - net-snmp           # snmpd daemon + snmpwalk/snmpget tools (single pkg on Alpine)
 
   # --- Hardware inventory tools ---
   - lshw
@@ -79,7 +84,6 @@ packages:
   - dmidecode          # DMI/SMBIOS hardware info
   - hdparm
   - smartmontools      # S.M.A.R.T. disk monitoring
-  - hwinfo             # native to SUSE/openSUSE
 
   # --- System monitoring & process tools ---
   - htop
@@ -87,8 +91,6 @@ packages:
   - lsof
   - strace
   - sysstat            # sar, iostat, mpstat
-  # dstat (and replacement dool) removed — neither is in repo-oss on Leap 16.
-  # sar/iostat from sysstat cover most of dstat's use cases.
 
   # --- Development / misc ---
   - git
@@ -98,17 +100,16 @@ packages:
   - tree
   - less
   - psmisc             # killall, fuser, pstree
-  - procps             # ps, top, vmstat, free, etc.
+  - procps             # ps, top, vmstat, free, etc. (Alpine name; not procps-ng)
   - util-linux
 
   # --- Python ---
   - python3
-  - python3-pip
-  # python3-virtualenv removed — not in repo-oss on Leap 16; use
-  # `python3 -m venv` or `pip install virtualenv` instead.
+  - py3-pip            # Alpine name; not python3-pip
+  - py3-virtualenv     # Alpine name; not python3-virtualenv
 
   # --- Misc useful ---
   - bc
   - at
-  - cron
+  - cronie             # cron daemon
   - logrotate

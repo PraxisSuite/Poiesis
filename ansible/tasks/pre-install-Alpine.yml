@@ -1,0 +1,22 @@
+---
+# Many of the tools in Alpine.yml's `packages:` list live in the community/
+# apk repo rather than main/. The Alpine cloud-init image enables community
+# by default, but a cluster-built or hand-rolled image may not — so add it
+# idempotently if missing, using the same mirror prefix as the existing
+# main/ entry so we don't mix mirrors in /etc/apk/repositories.
+
+- name: Detect the apk mirror prefix from the existing main entry
+  shell: awk '/\/main$/ {sub("/main$", "", $0); print; exit}' /etc/apk/repositories
+  register: apk_mirror_prefix
+  changed_when: false
+
+- name: Ensure Alpine community repo is enabled
+  lineinfile:
+    path: /etc/apk/repositories
+    line: "{{ apk_mirror_prefix.stdout }}/community"
+    create: false
+  when: apk_mirror_prefix.stdout | length > 0
+
+- name: Refresh apk index
+  community.general.apk:
+    update_cache: true

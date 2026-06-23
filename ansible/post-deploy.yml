@@ -34,9 +34,9 @@
     - name: Load OS-specific variables
       include_vars: "vars/{{ ansible_os_family }}.yml"
 
-    - name: Ensure correct sudo group for OS family
+    - name: Ensure sudo_group is defined (fallback if vars file is missing it)
       set_fact:
-        sudo_group: "{{ 'sudo' if ansible_os_family == 'Debian' else 'wheel' }}"
+        sudo_group: "{{ sudo_group | default('sudo' if ansible_os_family == 'Debian' else 'wheel') }}"
 
     # --------------------------------------------------------
     # Hostname
@@ -58,8 +58,8 @@
     - name: Create '{{ addusername }}' user
       user:
         name: "{{ addusername }}"
-        shell: /bin/bash
-        groups: "{{ 'sudo' if ansible_os_family == 'Debian' else 'wheel' }}"
+        shell: "{{ user_shell | default('/bin/bash') }}"
+        groups: "{{ sudo_group }}"
         append: true
         create_home: true
         state: present
@@ -82,13 +82,13 @@
 
     - name: Ensure sshd_config.d drop-in directory exists
       file:
-        path: /etc/ssh/sshd_config.d
+        path: "{{ sshd_config_d_path | default('/etc/ssh/sshd_config.d') }}"
         state: directory
         mode: '0755'
 
     - name: Write Poiesis sshd drop-in (root login + password auth)
       copy:
-        dest: /etc/ssh/sshd_config.d/00-poiesis.conf
+        dest: "{{ sshd_config_d_path | default('/etc/ssh/sshd_config.d') }}/00-poiesis.conf"
         content: |
           # Managed by Poiesis post-deploy.
           # Low-numbered drop-in so these settings take precedence over
@@ -152,10 +152,15 @@
     # --------------------------------------------------------
     # SNMP Configuration
     # --------------------------------------------------------
+    - name: Ensure snmpd.conf parent directory exists
+      file:
+        path: "{{ snmpd_conf_path | dirname }}"
+        state: directory
+
     - name: Deploy snmpd.conf from template
       template:
         src: templates/snmpd.conf.j2
-        dest: /etc/snmp/snmpd.conf
+        dest: "{{ snmpd_conf_path }}"
         backup: true
       vars:
         hostname: "{{ container_hostname }}"
@@ -163,7 +168,7 @@
 
     - name: Ensure MIBS directory exists
       file:
-        path: /var/lib/snmp/mibs
+        path: "{{ snmp_mibs_dir }}"
         state: directory
 
     - name: Enable and restart snmpd
@@ -182,7 +187,7 @@
     # Status report
     # --------------------------------------------------------
     - name: Get system IP addresses
-      shell: ip -4 addr show scope global | grep inet | awk '{print $2}'
+      shell: "{{ ip_show_cmd | default(\"ip -4 addr show scope global | awk '/inet / {print $2}'\") }}"
       register: ip_addrs
       changed_when: false
 

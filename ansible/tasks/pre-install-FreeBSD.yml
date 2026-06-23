@@ -1,0 +1,15 @@
+---
+# Bootstrap pkg(8) on a fresh FreeBSD cloud-init image: if pkg itself isn't
+# installed yet (true on the BASIC cloud image), `pkg -N` exits non-zero;
+# `ASSUME_ALWAYS_YES=YES pkg bootstrap` fetches and installs the pkg binary.
+- name: Bootstrap pkg(8) if not yet installed
+  shell: |
+    if ! /usr/sbin/pkg -N >/dev/null 2>&1; then
+      ASSUME_ALWAYS_YES=YES /usr/sbin/pkg bootstrap
+    fi
+  register: pkg_bootstrap
+  changed_when: "'Bootstrapping pkg' in pkg_bootstrap.stdout"
+
+- name: Update pkg repository catalog
+  command: /usr/sbin/pkg update -f
+  changed_when: false

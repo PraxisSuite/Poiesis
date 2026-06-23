@@ -1,0 +1,104 @@
+---
+# ============================================================
+# FreeBSD OS-specific variables
+# Loaded automatically by post-deploy*.yml via:
+#   include_vars: "vars/{{ ansible_os_family }}.yml"
+#
+# Caveats — read before deploying FreeBSD:
+#   - FreeBSD cloud images (FreeBSD-NN.N-RELEASE-amd64-ufs.qcow2.xz and the
+#     BASIC-CLOUDINIT variant) do NOT ship qemu-guest-agent. DHCP discovery
+#     via QGA (deploy_vm.py Step 4) will time out. Deploy FreeBSD with a
+#     static IP. After the deploy completes, qemu-guest-agent can be
+#     installed via `pkg install qemu-guest-agent` and enabled in
+#     /etc/rc.conf — Poiesis includes it in the standard pkg list below.
+#   - Many GNU utilities have different names or aren't available on FreeBSD.
+#     The package list below is the BSD-flavor equivalents.
+#   - bash isn't in the base system. It's added to the pkg list so the
+#     additional user's /bin/bash shell works.
+# ============================================================
+
+ssh_service: sshd
+sudo_group: wheel
+# chrony installs to /usr/local/etc/ on FreeBSD (third-party pkg prefix).
+chrony_conf_path: /usr/local/etc/chrony.conf
+chrony_service: chronyd
+# net-snmp on FreeBSD installs to /usr/local/etc/ as well.
+snmpd_conf_path: /usr/local/etc/snmpd.conf
+snmp_mibs_dir: /var/db/snmp/mibs
+# bash isn't in base — installed below via pkg.
+user_shell: /usr/local/bin/bash
+# OpenSSH on FreeBSD uses /etc/ssh/sshd_config but the drop-in directory
+# is the same standard sshd_config.d.
+sshd_config_d_path: /etc/ssh/sshd_config.d
+# FreeBSD has no `ip` command — use ifconfig.
+ip_show_cmd: "ifconfig | awk '/inet / && !/127.0.0.1/ {print $2}'"
+
+packages:
+  # --- Shell baseline ---
+  - bash               # required so /usr/local/bin/bash user shell works
+  - sudo               # not in base
+
+  # --- Network tools ---
+  - nmap               # port scanner
+  - mtr-nox11          # combined ping+traceroute (no X11 build)
+  - bind-tools         # dig, nslookup, host
+  - netcat             # nc - network utility (NetBSD nc; base also has nc)
+  - socat              # advanced netcat
+  - tcpdump            # packet capture (base has tcpdump too)
+  - iperf3             # network bandwidth testing
+  - fping              # fast parallel ping
+  - arp-scan           # ARP scanner
+  # ethtool removed — Linux-only tool, no FreeBSD package or equivalent.
+  - iftop              # live bandwidth monitor
+  - curl               # HTTP client
+  - wget               # HTTP/FTP download
+
+  # --- Text editors ---
+  - nano
+  - vim
+
+  # --- Data/JSON/YAML tools ---
+  - jq
+
+  # --- Archive/compression tools ---
+  - zip
+  - unzip
+  - 7-zip              # 7z — FreeBSD ports name is `7-zip`, not `p7zip`
+
+  # --- SSH tools ---
+  - sshpass
+
+  # --- NTP client ---
+  - chrony
+
+  # --- SNMP ---
+  - net-snmp           # snmpd + snmpwalk/snmpget
+
+  # --- Hardware inventory tools ---
+  - smartmontools      # S.M.A.R.T. disk monitoring
+
+  # --- System monitoring & process tools ---
+  - htop
+  - lsof
+  # iotop / strace exist on FreeBSD via dtrace tooling rather than dedicated
+  # ports — omitted to keep the pkg set lean.
+
+  # --- Development / misc ---
+  - git
+  - rsync
+  - screen
+  - tmux
+  - tree
+
+  # --- Python ---
+  # FreeBSD packages Python as version-tagged ports. The runtime is in base
+  # via /usr/local/bin/python3 once installed. Use python311 or current.
+  - python311
+  - py311-pip
+
+  # --- Misc useful ---
+  # bc removed — already in FreeBSD base (/usr/bin/bc); no pkg to install.
+  - logrotate
+
+  # --- QEMU integration (post-deploy install — initial boot won't have it) ---
+  - qemu-guest-agent

@@ -1,0 +1,5 @@
+---
+- name: Upgrade all installed packages
+  community.general.apk:
+    upgrade: true
+    update_cache: true
