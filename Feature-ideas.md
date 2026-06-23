@@ -1594,7 +1594,9 @@ If the chosen node fails `check_node_cpu_baseline`, surface a "node X can't run 
 
 ---
 
-## RHEL-Version-Conditional Package Lists
+## RHEL-Version-Conditional Package Lists — **Implemented**
+
+> **Status: Implemented 2026-06-23.** `ansible/vars/RedHat.yml` now defines three groups: `packages_common` (works on every supported RHEL-family version), `packages_rhel_le_9` (older EPEL names: `iotop`, `p7zip`, `arp-scan`), and `packages_rhel_ge_10` (modern names: `iotop-c`, `7zip`; no `arp-scan`). The composed `packages:` variable resolves at evaluation time via a Jinja conditional on `ansible_distribution_major_version|int`. Validated end-to-end with two parallel VM deploys: test-rocky9 on proxmoxb01 (11m 51s, exercised `packages_rhel_le_9`) and test-rocky10 on proxmox01 (8m 29s, exercised `packages_rhel_ge_10`). Fedora 43+ automatically lands in the modern set (versions are numerically ≥ 10) which matches Fedora's main-repo names.
 
 `ansible/vars/RedHat.yml` is currently a single flat package list. BUG-008 forced `vim` → `vim-enhanced`, `iotop` → `iotop-c`, `p7zip` → `7zip` for Rocky 10, but those new names may not exist on Rocky 8 (e.g. EPEL 8 still ships `p7zip` not `7zip`). The current fix assumes Rocky 8 deploys will keep working; in practice they may break the next time someone deploys one.
 
@@ -1626,3 +1628,34 @@ Then in `post-deploy.yml`/`post-deploy-vm.yml`, compose the install list based o
 ### Why not now
 
 The current shipping fix (use RHEL 10 names everywhere) is good enough as long as nobody actually deploys Rocky 8. Validation pass needed before promoting this to "must-do" — confirm whether `vim-enhanced` / `iotop-c` / `7zip` actually break on Rocky 8 or whether they're still aliased.
+
+---
+
+## Re-add `arp-scan` to RHEL 10+ when EPEL repackages it
+
+The Fedora project pruned `arp-scan` from EPEL 10 when EPEL 10 launched — no maintainer volunteered to carry it forward from EPEL 8/9. Upstream `arp-scan` is still actively maintained (last release 2024); the gap is purely a packaging issue. As of 2026-06-23, `packages_rhel_ge_10` in `ansible/vars/RedHat.yml` omits it; `packages_rhel_le_9` still includes it; Debian/Suse/Alpine/FreeBSD all still install it from their normal repos.
+
+### What to watch
+
+Periodically check `dnf -q list arp-scan` or `pkg search -e arp-scan` against an EPEL 10 host (any of the Rocky 10 / Alma 10 / CentOS Stream 10 deploys). When it shows up:
+
+1. Add `arp-scan` back to `packages_rhel_ge_10` in `ansible/vars/RedHat.yml`.
+2. Run the same two-VM validation deploy we used for BUG-008 (Rocky 9 + Rocky 10 in parallel) to confirm both branches still install cleanly.
+
+### Optional Fedora-only re-add
+
+Fedora's main repos *do* still have `arp-scan` (not gone from F44 as of writing). If a Fedora user complains before EPEL 10 ships it again, a narrow conditional could re-add it just for Fedora deploys:
+
+```yaml
+packages_fedora_extra:
+  - arp-scan
+packages: "{{ packages_common
+              + (packages_rhel_le_9 if ansible_distribution_major_version|int <= 9 else packages_rhel_ge_10)
+              + (packages_fedora_extra if ansible_distribution == 'Fedora' else []) }}"
+```
+
+Not worth the maintenance burden today — `nmap -sn <subnet>` is in the standard package list everywhere and does the same job a bit slower. Documented this as the workaround in `docs/troubleshooting.md` if the question ever comes up.
+
+### Why we kept it on RHEL ≤ 9
+
+EPEL 8 and EPEL 9 still ship `arp-scan` (and will until end-of-life for those repos in 2029 / 2032 respectively). Anyone deploying Rocky 8 or 9 today gets the tool for free — no reason to remove it from `packages_rhel_le_9` just because EPEL 10 dropped it.
