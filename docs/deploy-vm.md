@@ -197,7 +197,13 @@ The check runs before any expensive SFTP/import work. If the node lacks a requir
 
 **Supported cpu_type values:** `x86-64-v2`, `x86-64-v2-AES` (Poiesis's default), `x86-64-v3`, `x86-64-v4`. Specific CPU model names (`host`, `Haswell`, `Skylake`, etc.) are accepted but skip the flag-level check — the operator is presumed to know what they're requesting.
 
-**Default:** The global default lives at `vm.cpu_type` in `config.yaml` (ships as `x86-64-v2-AES`). The per-deployment `cpu_type` JSON field always wins when present.
+**Resolution order (highest wins):**
+
+1. **Deployment JSON `cpu_type` field** — explicit operator override.
+2. **Catalog `cpu_baseline` field for the chosen image** — image-aware default. Set on RHEL 10 family entries (Rocky 10, Alma 10, CentOS Stream 10) so deploys of those images get `x86-64-v3` automatically without anyone having to remember to set the JSON field. See [`docs/specs/cloud-images.md`](specs/cloud-images.md) for the field reference.
+3. **`vm.cpu_type` in `config.yaml`** — cluster-wide default. Ships as `x86-64-v2-AES`.
+
+When the resolved value comes from anywhere other than the global default, the deploy wizard prints which source it came from — so you can see at a glance whether your override took, whether the catalog defaulted it for you, or whether the cluster-wide default applies.
 
 ---
 

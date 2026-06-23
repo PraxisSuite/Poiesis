@@ -46,6 +46,7 @@ cloud_images:
 | `name` | ✓ | Display name shown in the interactive image selection prompt. Should be human-readable and include the version. |
 | `url` | ✓ | Direct download URL for the cloud image. Used when the image is not cached locally or when `image_refresh: true` is set in the deployment file. |
 | `filename` | ✓ | Local filename used for caching on the Proxmox node. Images are stored at `{storage_path}/cloud-images/<filename>` — not in the Proxmox template/ISO store, so they do not appear in the Proxmox GUI ISO picker. |
+| `cpu_baseline` | optional | Minimum QEMU `-cpu` microarchitecture required to boot this image. When set, `deploy_vm.py` uses this as the cpu_type default for every deployment of this image (unless the deployment JSON's own `cpu_type` field explicitly overrides). Common values: `x86-64-v2`, `x86-64-v3`, `x86-64-v4`. Currently used to mark **RHEL 10 family** entries (Rocky 10, AlmaLinux 10, CentOS Stream 10) as requiring `x86-64-v3` — Red Hat raised the baseline microarchitecture for RHEL 10, and the kernel hits illegal-instruction faults on pre-Haswell hosts. See [deploy-vm.md → CPU Baseline Check](../deploy-vm.md#cpu-baseline-check-rhel-10-family) and [known-bugs.md BUG-006](../../known-bugs.md). |
 
 ---
 
