@@ -22,6 +22,7 @@ The wizard can be driven entirely interactively, pre-filled from a deployment JS
 - [Preflight Behavior](#preflight-behavior)
 - [LXC Feature Flags](#lxc-feature-flags)
 - [Downloading LXC Templates](#downloading-lxc-templates)
+- [LXC Bootstrap (Multi-OS)](#lxc-bootstrap-multi-os)
 - [Static IP Deployment](#static-ip-deployment)
 - [Walkthrough: LXC Prompt Order](#walkthrough-lxc-prompt-order)
 - [The 7 LXC Deployment Steps](#the-7-lxc-deployment-steps)
@@ -275,6 +276,27 @@ The Proxmox catalog includes many **pre-configured appliance templates** — mos
 > **Warning:** Appliance templates — TurnKey and possibly others — are **not compatible** with the Poiesis Ansible post-deploy playbook. They use custom initialization frameworks and non-standard configurations that conflict with the baseline setup steps (package install, user creation, NTP, SNMP). Deploying an appliance template will succeed through Steps 1–4 but **Ansible (Step 5) will fail**.
 >
 > Use appliance templates only if you plan to disable Ansible post-deploy (`ansible.enabled: false` in `config.yaml`) or manage configuration entirely manually after deployment.
+
+---
+
+## LXC Bootstrap (Multi-OS)
+
+Between `pct create` and the Ansible handoff, `deploy_lxc.py` runs a short bootstrap phase to install OpenSSH, enable the daemon, write an `00-poiesis.conf` sshd drop-in (`PermitRootLogin yes`, `PasswordAuthentication yes`), and set the root password — all via `pct exec` from the Proxmox node. After bootstrap completes, the container is reachable on SSH and Ansible can take over.
+
+The bootstrap is **multi-OS by config** — it reads `lxc-bootstrap.yaml` in the project root to dispatch the right commands per detected OS family. Out of the box, Poiesis supports:
+
+| Family | `ssh_pkg` | `ssh_service` | Init system | Package manager |
+|---|---|---|---|---|
+| Debian (Debian, Ubuntu, Mint, Pop!_OS, Kali, Raspbian, Devuan) | `openssh-server` | `ssh` | systemd | `apt-get` |
+| RedHat (Rocky, AlmaLinux, CentOS Stream, RHEL, Fedora, Oracle Linux) | `openssh-server` | `sshd` | systemd | `dnf` |
+| Suse (openSUSE Leap, Tumbleweed, SLES) | `openssh` | `sshd` | systemd | `zypper` |
+| Alpine | `openssh` | `sshd` | OpenRC | `apk` |
+
+OS-family detection happens at runtime via `pct exec <vmid> -- cat /etc/os-release` — `ID=` is checked first, then each whitespace-separated `ID_LIKE=` token, against the `ids:` list per family in the YAML. First match wins.
+
+**Adding a new family** is a `lxc-bootstrap.yaml` edit — no Python code changes. The two pieces needed: (1) a new entry under `families:` with `ids`, `ssh_pkg`, `ssh_service`, `init`, and `pkg_install`; and (2) if the family's init system isn't already covered (systemd or OpenRC), a new entry under `init_systems:` with `enable_now` and `restart` commands. See the inline comments in `lxc-bootstrap.yaml` for the contract.
+
+**chrony on LXC.** The Ansible post-deploy NTP tasks (configure chrony, enable chronyd) are gated with `when: ansible_virtualization_type != 'lxc'`. Containers share the host's system clock, so chronyd has nothing to do inside — and on some templates (Rocky 10 unprivileged) it refuses to start because the privileged "step the clock" calls fail. Let the Proxmox host's chrony handle NTP for all its containers.
 
 ---
 

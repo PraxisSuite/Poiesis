@@ -66,6 +66,7 @@ Poiesis/
 ├── config.yaml                    # Credentials + defaults (excluded from git — never commit)
 ├── config.yaml.example            # Documented config template (committed — copy to start)
 ├── cloud-images.yaml              # Cloud image catalog for deploy_vm.py
+├── lxc-bootstrap.yaml             # Per-OS-family LXC bootstrap config (pkg manager, ssh service, init system, sshd drop-in) — add a new family by editing this file
 ├── requirements.txt               # Python dependencies
 ├── setup.sh                       # First-time setup script (virtualenv + system deps)
 ├── known-bugs.md                  # Known issues and current status
