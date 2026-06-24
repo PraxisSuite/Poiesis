@@ -58,10 +58,15 @@ If the bug is open, describe any workaround. If none exists, state that explicit
 # Known Bugs / Issues
 ---
 
+
+---
+# FIXED Bugs / Issues
+---
+
 ## BUG-012 — `deploy_lxc.py` bootstrap step is Debian/Ubuntu-only (ssh.service name, /etc/ssh/sshd_config edits)
 
-**Status:** Open
-**Severity:** High (blocks every LXC deploy of a non-Debian-family template — Rocky/Alma/CentOS/Fedora/openSUSE/Alpine LXCs all fail at the post-create bootstrap step before Ansible even runs)
+**Status:** Fixed
+**Severity:** High (blocked every LXC deploy of a non-Debian-family template — Rocky/Alma/CentOS/Fedora/openSUSE/Alpine LXCs all failed at the post-create bootstrap step before Ansible could run)
 **Affected script:** `deploy_lxc.py` (bootstrap step run after `pct create`)
 **First observed:** 2026-06-23, deploying a Rocky 10 LXC on `proxmox01` after BUG-011's auto-download fix landed. The container created cleanly with the right Rocky template, then the bootstrap step printed:
 
@@ -77,45 +82,53 @@ If the bug is open, describe any workaround. If none exists, state that explicit
 ```
 
 **Date Added:** 2026-06-23
+**Date Fixed:** 2026-06-23
 
 ### Root Cause
 
-The bootstrap step inside `deploy_lxc.py` (between `pct create` and the Ansible handoff) assumes the container's OS uses Debian/Ubuntu conventions:
+The bootstrap step inside `modules/proxmox.py:bootstrap_lxc_ssh` (run between `pct create` and the Ansible handoff) had four Debian/Ubuntu-specific assumptions:
 
-- `pct exec <vmid> -- systemctl enable --now ssh` — fails on RHEL family (`sshd.service` not `ssh.service`), Alpine (no systemd), etc.
-- `pct exec <vmid> -- sed -i ... /etc/ssh/sshd_config` — fails on RHEL 10 LXC templates that ship a minimal `/etc/ssh/sshd_config.d/`-only sshd config with no main file.
+1. `apt-get update && apt-get install -y openssh-server` — fails on RHEL/Suse (no apt) and Alpine (no apt).
+2. `systemctl enable --now ssh` — fails on RHEL family (`sshd.service` not `ssh.service`), Alpine (no systemd — uses OpenRC).
+3. `sed -i ... /etc/ssh/sshd_config` — fails on RHEL 10 LXC templates that ship a minimal `/etc/ssh/sshd_config.d/`-only sshd config with no main file.
+4. `pct exec <vmid> -- bash -c ...` — fails on Alpine (no bash by default — only `/bin/sh`).
 
-The warnings are non-fatal (we still print "✓ Bootstrap complete"), but SSH doesn't actually start, so the subsequent "Waiting for SSH" times out.
+The warnings were non-fatal (the code still printed "✓ Bootstrap complete"), but SSH never started, so the subsequent "Waiting for SSH" timed out at 60s.
 
-This is parallel to the multi-OS work we did for VMs:
-- `ansible/vars/<OS-family>.yml` defines `ssh_service` (`sshd` on RHEL/Alpine/FreeBSD, `ssh` on Debian).
-- `ansible/post-deploy*.yml` uses `sshd_config.d/00-poiesis.conf` (a drop-in) instead of editing the main file.
+### Fix Applied
 
-The LXC bootstrap step needs the same treatment — but it runs *before* Ansible (in `deploy_lxc.py` itself, via `pct exec`), so it doesn't have the OS-family vars to dispatch from. It has to detect the OS family inside the container at runtime.
+Two coordinated changes:
 
-### Fix shape (not yet implemented)
+1. **New `lxc-bootstrap.yaml`** in project root — declarative per-OS-family bootstrap config. Each family defines its `ssh_pkg`, `ssh_service`, `init` system, and `pkg_install` command template; each init system defines its `enable_now` and `restart` commands. The sshd-config drop-in path + content live there too. **Adding a new OS family is now a YAML edit, not a Python change** — debian / redhat / suse / alpine ship out of the box.
 
-Three places in `deploy_lxc.py`'s bootstrap need to become OS-aware:
+2. **Rewrote `modules/proxmox.py:bootstrap_lxc_ssh`** to consume that YAML:
+   - `_load_lxc_bootstrap_config()` reads the YAML at runtime
+   - `_detect_lxc_family()` runs `pct exec <vmid> -- cat /etc/os-release`, parses `ID=` and `ID_LIKE=` tokens, and matches against `families.<name>.ids` (first match wins; ID checked before each ID_LIKE token)
+   - Dispatches the installed package + service-enable + service-restart commands using the detected family's config
+   - **Writes `/etc/ssh/sshd_config.d/00-poiesis.conf`** with the standard `PermitRootLogin yes` + `PasswordAuthentication yes` content, base64-encoded across the `pct exec ... sh -c '...'` quoting boundary to avoid multi-line string issues
+   - Also changed `run_pct_exec()`'s default shell from `bash` to `sh` (cross-distro safe; Alpine compatibility)
 
-1. **Detect OS family inside the container** via `pct exec <vmid> -- cat /etc/os-release | grep -i 'ID_LIKE\|^ID='` once at the start of bootstrap.
-2. **Service name:** map detected family to `ssh` (Debian) vs `sshd` (RHEL/Alpine/FreeBSD).
-3. **SSH config:** instead of editing `/etc/ssh/sshd_config` directly, use the same drop-in pattern the post-deploy playbook uses — `mkdir -p /etc/ssh/sshd_config.d && cat > /etc/ssh/sshd_config.d/00-poiesis.conf <<EOF ... EOF`. Drop-ins work on every modern OpenSSH, regardless of whether the main file exists.
+The pattern parallels the VM Ansible multi-OS work: same per-family abstraction, same `00-poiesis.conf` drop-in, same low-numbered preempt-vendor-shipped-drop-ins reasoning.
 
-Alpine LXC also needs OpenRC handling for the service-start step (`rc-update add sshd default && rc-service sshd start` instead of `systemctl`). Same pattern as the qga snippet init-system detection.
+### Side fix — chrony skip on LXC
 
-### Workaround
+A downstream Ansible task (`Enable and restart chrony`) also failed on the Rocky 10 LXC because `chronyd.service` can't start in an unprivileged container (it tries to adjust the system clock, which the host kernel rejects). LXC containers share the host's clock — chrony has nothing to do there. Added `when: ansible_virtualization_type != 'lxc'` to both chrony tasks in `ansible/post-deploy.yml` (LXC playbook). VMs are unaffected — they have their own kernel and chrony works fine.
 
-Use Debian-family LXC templates only (Ubuntu, Debian) until this is fixed. VM-based deploys are unaffected — they go through cloud-init + Ansible, both of which already handle multi-OS correctly.
+### Validation
+
+`test-rocky10-lxc.json` deployed clean end-to-end on `proxmox01` in 5m 15s on 2026-06-23. Full chain:
+
+- BUG-011's auto-download fix fetched `rockylinux-10-default_*.tar.xz` from the Proxmox catalog (template wasn't on the node).
+- `_detect_lxc_family()` correctly identified the new container as `redhat` from `ID=rocky` in `/etc/os-release`.
+- `dnf install -y openssh-server` succeeded; `systemctl enable --now sshd` succeeded.
+- `/etc/ssh/sshd_config.d/00-poiesis.conf` was written via base64 + decode.
+- SSH became reachable; Ansible ran 27+ tasks to completion with the chrony skip.
+- DNS + inventory registration succeeded.
 
 ### Why this didn't surface earlier
 
-The LXC pipeline was only ever exercised with Ubuntu and Debian templates (the only LXC templates Poiesis ships defaults for, and the only ones any of the example `deployments/lxc/*.json` files use). The Rocky LXC test deploys today were the first time a non-Debian family LXC template was actually attempted via Poiesis. The BUG-011 silent-substitution behavior was *masking* this bug — every LXC deploy was secretly running on Ubuntu even when the JSON asked for something else.
+The LXC pipeline was only ever exercised with Ubuntu and Debian templates (the only LXC templates Poiesis shipped defaults for, and the only ones any of the example `deployments/lxc/*.json` files used). The Rocky LXC test deploys on 2026-06-23 were the first time a non-Debian family LXC template was actually attempted via Poiesis — and even those were initially masked by BUG-011's silent Ubuntu substitution. Fixing BUG-011 exposed BUG-012; fixing BUG-012 closed the loop.
 
----
-
-
----
-# FIXED Bugs / Issues
 ---
 
 ## BUG-011 — `deploy_lxc.py --silent` silently substitutes a different LXC template when the requested one isn't downloaded
