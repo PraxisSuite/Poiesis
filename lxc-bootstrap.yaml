@@ -1,0 +1,99 @@
+# ============================================================
+# Per-OS-family bootstrap configuration for LXC containers
+# ============================================================
+# Used by modules/proxmox.py:bootstrap_lxc_ssh() to set up SSH
+# access inside a freshly-created LXC before Ansible takes over.
+#
+# Adding a new OS family later is purely a config change here —
+# no edits to Poiesis Python code required:
+#   1. Add the family under `families:` with its ssh_pkg / service /
+#      init / pkg_install.
+#   2. List the /etc/os-release `ID` and `ID_LIKE` tokens that map
+#      to it under `families.<name>.ids`. First-match wins; the
+#      bootstrap checks `ID` first, then each whitespace-separated
+#      `ID_LIKE` value.
+#   3. If the family uses an init system not already listed under
+#      `init_systems:`, add its enable_now / restart commands too.
+#
+# This file is loaded by yaml.safe_load — no Jinja interpolation,
+# no Python expressions. Format strings use {pkg} and {service}
+# placeholders that are str.format-substituted at runtime.
+# ============================================================
+
+families:
+
+  debian:
+    # /etc/os-release ID and ID_LIKE tokens that map to this family.
+    ids:
+      - debian
+      - ubuntu
+      - linuxmint
+      - pop          # Pop!_OS
+      - kali
+      - raspbian
+      - devuan
+    ssh_pkg: openssh-server
+    ssh_service: ssh        # Debian / Ubuntu use `ssh.service`
+    init: systemd
+    # {pkg} is the placeholder; the bootstrap substitutes ssh_pkg above.
+    pkg_install: "DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq {pkg}"
+
+  redhat:
+    ids:
+      - rhel
+      - fedora
+      - rocky
+      - almalinux
+      - centos
+      - ol            # Oracle Linux's ID
+      - oracle
+    ssh_pkg: openssh-server
+    ssh_service: sshd       # RHEL family uses `sshd.service`
+    init: systemd
+    pkg_install: "dnf install -y -q {pkg}"
+
+  suse:
+    ids:
+      - opensuse
+      - opensuse-leap
+      - opensuse-tumbleweed
+      - sles
+      - suse
+    ssh_pkg: openssh
+    ssh_service: sshd
+    init: systemd
+    pkg_install: "zypper --non-interactive install {pkg}"
+
+  alpine:
+    ids:
+      - alpine
+    ssh_pkg: openssh
+    ssh_service: sshd       # Alpine's OpenSSH init script is named `sshd`
+    init: openrc            # Alpine uses OpenRC, not systemd
+    pkg_install: "apk add --no-cache {pkg}"
+
+# Init-system commands. Selected via families.<name>.init.
+# {service} is substituted from families.<name>.ssh_service.
+init_systems:
+
+  systemd:
+    enable_now: "systemctl enable --now {service}"
+    restart: "systemctl restart {service}"
+
+  openrc:
+    enable_now: "rc-update add {service} default && rc-service {service} start"
+    restart: "rc-service {service} restart"
+
+# sshd_config drop-in: works on every modern OpenSSH regardless of
+# whether the main /etc/ssh/sshd_config file exists (Rocky 10 LXC
+# templates don't ship one — see known-bugs.md BUG-012). The
+# low-numbered filename ensures these settings preempt any later
+# drop-in the cloud-image vendor might add (e.g. Ubuntu cloud's
+# 60-cloudimg-settings.conf which sets PasswordAuthentication no).
+sshd_drop_in:
+  path: /etc/ssh/sshd_config.d/00-poiesis.conf
+  content: |
+    # Managed by Poiesis LXC bootstrap (modules/proxmox.py:bootstrap_lxc_ssh).
+    # Low-numbered so it preempts vendor-shipped drop-ins.
+    PermitRootLogin yes
+    PasswordAuthentication yes

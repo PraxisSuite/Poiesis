@@ -136,18 +136,29 @@
 
     # --------------------------------------------------------
     # NTP Configuration (chrony)
+    #
+    # Skipped on LXC: containers share the host's system clock, so chronyd
+    # has nothing to do and explicitly fails to start in unprivileged LXC
+    # (it tries to adjust the system clock — a privileged operation the
+    # container kernel rejects). Rocky 10 + Alma 10 LXC templates surface
+    # this as a hard "Job for chronyd.service failed" at service-enable time;
+    # other distros silently no-op via ConditionVirtualization=!container in
+    # their unit files. Either way, time inside an LXC is the host's time —
+    # let the Proxmox host's chrony handle NTP for all its containers.
     # --------------------------------------------------------
     - name: Configure chrony NTP
       template:
         src: templates/chrony.conf.j2
         dest: "{{ chrony_conf_path }}"
         backup: true
+      when: ansible_virtualization_type != 'lxc'
 
     - name: Enable and restart chrony
       service:
         name: "{{ chrony_service }}"
         enabled: true
         state: restarted
+      when: ansible_virtualization_type != 'lxc'
 
     # --------------------------------------------------------
     # SNMP Configuration

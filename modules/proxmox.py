@@ -749,9 +749,17 @@ def wait_for_lxc_ip(proxmox: ProxmoxAPI, node: str, vmid: int,
                        "Check that the container started and VLAN/DHCP is reachable.")
 
 
-def run_pct_exec(ssh: paramiko.SSHClient, vmid: int, cmd: str, check: bool = True) -> tuple[int, str, str]:
-    """Run a command inside an LXC container via pct exec on the proxmox node."""
-    full_cmd = f"pct exec {vmid} -- bash -c {cmd!r}"
+def run_pct_exec(ssh: paramiko.SSHClient, vmid: int, cmd: str,
+                 check: bool = True, shell: str = "sh") -> tuple[int, str, str]:
+    """Run a command inside an LXC container via pct exec on the proxmox node.
+
+    Defaults to `sh -c` for cross-distro compatibility — Alpine LXC images
+    don't ship bash by default. Pass `shell="bash"` only if the caller
+    specifically needs bash-only features (process substitution, [[ ]], etc.).
+    Standard POSIX shell features (pipes, &&, heredocs, redirections) work
+    with the default `sh`.
+    """
+    full_cmd = f"pct exec {vmid} -- {shell} -c {cmd!r}"
     stdin, stdout, stderr = ssh.exec_command(full_cmd)
     exit_code = stdout.channel.recv_exit_status()
     out = stdout.read().decode().strip()
@@ -761,17 +769,88 @@ def run_pct_exec(ssh: paramiko.SSHClient, vmid: int, cmd: str, check: bool = Tru
     return exit_code, out, err
 
 
+def _load_lxc_bootstrap_config() -> dict:
+    """Load lxc-bootstrap.yaml — the per-OS-family bootstrap configuration.
+
+    See lxc-bootstrap.yaml in the project root for the file format. Raises
+    RuntimeError if the file is missing or unparseable — this is a critical
+    config file that ships with the project.
+    """
+    import yaml
+    config_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "lxc-bootstrap.yaml",
+    )
+    if not os.path.exists(config_path):
+        raise RuntimeError(
+            f"lxc-bootstrap.yaml not found at {config_path}. "
+            f"This file ships with Poiesis and is required for LXC deploys."
+        )
+    try:
+        with open(config_path) as f:
+            return yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        raise RuntimeError(f"lxc-bootstrap.yaml is not valid YAML: {e}") from e
+
+
+def _detect_lxc_family(ssh: paramiko.SSHClient, vmid: int,
+                       families_cfg: dict) -> tuple[str, dict]:
+    """Detect the OS family inside an LXC by reading /etc/os-release.
+
+    Returns (family_name, family_config_dict). Raises RuntimeError if the
+    container's OS doesn't match any family declared in lxc-bootstrap.yaml.
+    """
+    _, out, _ = run_pct_exec(ssh, vmid, "cat /etc/os-release")
+    os_id = ""
+    id_like_tokens: list[str] = []
+    for line in out.splitlines():
+        line = line.strip()
+        if line.startswith("ID="):
+            os_id = line.split("=", 1)[1].strip().strip('"').strip("'").lower()
+        elif line.startswith("ID_LIKE="):
+            id_like_raw = line.split("=", 1)[1].strip().strip('"').strip("'").lower()
+            id_like_tokens = id_like_raw.split()
+
+    # Try ID first, then each ID_LIKE token. First-match wins.
+    candidates = [os_id] + id_like_tokens
+    for candidate in candidates:
+        if not candidate:
+            continue
+        for family_name, family_cfg in families_cfg.items():
+            if candidate in family_cfg.get("ids", []):
+                return family_name, family_cfg
+
+    raise RuntimeError(
+        f"Could not match container OS to any family in lxc-bootstrap.yaml. "
+        f"Detected /etc/os-release: ID={os_id!r}, ID_LIKE={' '.join(id_like_tokens)!r}. "
+        f"Add the missing token(s) under `families.<name>.ids` in lxc-bootstrap.yaml."
+    )
+
+
 def bootstrap_lxc_ssh(cfg: dict, node_name: str, vmid: int, password: str) -> None:
     """
     SSH to the Proxmox node and use pct exec to:
-      1. Update apt cache
-      2. Install openssh-server
-      3. Enable SSH daemon
-      4. Allow PermitRootLogin and PasswordAuthentication
-      5. Set root password
-    This enables Ansible to then SSH directly into the container.
+      1. Detect the LXC's OS family from /etc/os-release
+      2. Install openssh-server (or equivalent) via the family's package manager
+      3. Enable + start the SSH service via the family's init system
+      4. Write /etc/ssh/sshd_config.d/00-poiesis.conf to allow root SSH +
+         password auth (drop-in approach — works on every modern OpenSSH
+         even when the main sshd_config file doesn't exist, e.g. Rocky 10 LXC)
+      5. Restart SSH so the drop-in takes effect
+      6. Set root password (chpasswd is universal across Linux distros)
+
+    Per-OS-family commands live in lxc-bootstrap.yaml in the project root.
+    Adding a new family later is just a YAML edit — no Python changes.
+
     LXC containers always use DHCP — no network reconfiguration is done here.
     """
+    import base64
+
+    bootstrap_config = _load_lxc_bootstrap_config()
+    families_cfg = bootstrap_config["families"]
+    init_systems_cfg = bootstrap_config["init_systems"]
+    drop_in_cfg = bootstrap_config["sshd_drop_in"]
+
     pve = cfg["proxmox"]
     ssh_host = node_ssh_host(cfg, node_name)
     ssh_key = os.path.expanduser(pve.get("ssh_key", "~/.ssh/id_rsa"))
@@ -788,36 +867,79 @@ def bootstrap_lxc_ssh(cfg: dict, node_name: str, vmid: int, password: str) -> No
             f"SSH key auth to {ssh_host} failed. Ensure {ssh_key} is authorized on the node."
         )
 
-    steps = [
-        ("Updating apt cache in container",     "apt-get update -qq"),
-        ("Installing openssh-server",            "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server"),
-        ("Enabling and starting SSH",            "systemctl enable --now ssh"),
-        ("Allowing root SSH login",
-            "sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && "
-            "sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config && "
-            "systemctl restart ssh"),
-    ]
+    try:
+        # ── Detect OS family ──
+        family_name, family_cfg = _detect_lxc_family(ssh, vmid, families_cfg)
+        init_name = family_cfg["init"]
+        init_cfg = init_systems_cfg.get(init_name)
+        if not init_cfg:
+            raise RuntimeError(
+                f"Family '{family_name}' references init system '{init_name}' "
+                f"which isn't defined in lxc-bootstrap.yaml under init_systems."
+            )
+        console.print(
+            f"  [dim]Detected container OS family: [bold]{family_name}[/bold] "
+            f"(pkg manager via {family_cfg['ssh_pkg']!r}, init: {init_name})[/dim]"
+        )
 
-    for label, cmd in steps:
-        console.print(f"  [dim]{label}...[/dim]")
-        try:
-            run_pct_exec(ssh, vmid, cmd)
-        except RuntimeError as e:
-            console.print(f"  [yellow]Warning: {e}[/yellow]")
+        # ── Install SSH server ──
+        console.print(f"  [dim]Installing {family_cfg['ssh_pkg']}...[/dim]")
+        run_pct_exec(
+            ssh, vmid,
+            family_cfg["pkg_install"].format(pkg=family_cfg["ssh_pkg"]),
+        )
 
-    console.print("  [dim]Setting root password...[/dim]")
-    stdin, stdout, stderr = ssh.exec_command(
-        f"echo 'root:{password}' | pct exec {vmid} -- chpasswd"
-    )
-    stdout.channel.recv_exit_status()
+        # ── Enable + start SSH service ──
+        ssh_service = family_cfg["ssh_service"]
+        console.print(f"  [dim]Enabling and starting {ssh_service}...[/dim]")
+        run_pct_exec(
+            ssh, vmid,
+            init_cfg["enable_now"].format(service=ssh_service),
+        )
 
-    # LXC containers always use DHCP (ip=dhcp is hardcoded at creation).
-    # No static network config is needed or safe here — applying a static
-    # netplan during bootstrap causes the DHCP lease to be abandoned while
-    # other containers are still acquiring leases, leading to IP conflicts.
+        # ── Write sshd drop-in (PermitRootLogin + PasswordAuthentication) ──
+        # We base64-encode the content so the multi-line text passes through
+        # the `pct exec ... sh -c '...'` quoting layer without issues.
+        drop_in_path = drop_in_cfg["path"]
+        drop_in_content = drop_in_cfg["content"]
+        drop_in_b64 = base64.b64encode(drop_in_content.encode()).decode()
+        drop_in_dir = os.path.dirname(drop_in_path)
+        console.print(f"  [dim]Writing sshd drop-in {drop_in_path}...[/dim]")
+        run_pct_exec(
+            ssh, vmid,
+            f"mkdir -p {drop_in_dir} && "
+            f"echo {drop_in_b64} | base64 -d > {drop_in_path} && "
+            f"chmod 0644 {drop_in_path}",
+        )
 
-    ssh.close()
-    console.print("  [green]✓ Bootstrap complete — SSH is ready[/green]")
+        # ── Restart SSH so the drop-in takes effect ──
+        console.print(f"  [dim]Restarting {ssh_service}...[/dim]")
+        run_pct_exec(
+            ssh, vmid,
+            init_cfg["restart"].format(service=ssh_service),
+        )
+
+        # ── Set root password ──
+        # chpasswd works on Debian, RHEL, Suse, Alpine. Universal across Linux.
+        console.print("  [dim]Setting root password...[/dim]")
+        # Use exec_command directly so we can pipe stdin to pct exec via the
+        # outer shell — this avoids embedding the password in the pct exec
+        # quoting context.
+        stdin, stdout, stderr = ssh.exec_command(
+            f"echo 'root:{password}' | pct exec {vmid} -- chpasswd"
+        )
+        if stdout.channel.recv_exit_status() != 0:
+            err = stderr.read().decode().strip()
+            raise RuntimeError(f"chpasswd failed: {err}")
+
+        # LXC containers always use DHCP (ip=dhcp is hardcoded at creation).
+        # No static network config is needed or safe here — applying a static
+        # netplan during bootstrap causes the DHCP lease to be abandoned while
+        # other containers are still acquiring leases, leading to IP conflicts.
+
+        console.print("  [green]✓ Bootstrap complete — SSH is ready[/green]")
+    finally:
+        ssh.close()
 
 
 def create_lxc(proxmox: ProxmoxAPI, node_name: str, create_params: dict) -> int:
