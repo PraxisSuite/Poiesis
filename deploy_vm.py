@@ -113,8 +113,11 @@ from modules.lib import (
     write_history,
     check_vlan_exists,
     check_node_cpu_baseline,
+    check_node_vcpu_max,
     required_flags_for_cpu_type,
     get_node_cpu_flags,
+    get_node_max_vcpus,
+    decorate_nodes_with_cpu_flags,
     resolve_tag_colors,
     apply_tag_colors,
     add_common_deploy_args,
@@ -744,6 +747,48 @@ def main() -> None:
                 console.print()
                 return BACK
 
+        # vCPU-cap filter: same shape as the baseline check above, but checking
+        # the per-VM vCPU cap (`cores × threads-per-core`). Surfaces a mismatch
+        # *now* rather than waiting for the check_node_vcpu_max preflight, and
+        # offers ESC-back with the list of nodes that *could* host the request.
+        if not silent:
+            requested_cpus = int(s["cpus_str"])
+            node_cap = get_node_max_vcpus(proxmox, s["node_name"])
+            if node_cap is not None and requested_cpus > node_cap:
+                console.print()
+                console.print(
+                    f"[red]✗ Selected node [bold]{s['node_name']}[/bold] allows "
+                    f"only [bold]{node_cap}[/bold] vCPUs per VM, but this "
+                    f"deployment requests [bold]{requested_cpus}[/bold].[/red]"
+                )
+                capable = []
+                for n in nodes:
+                    other_name = n.get("node_name") or n.get("node")
+                    if other_name == s["node_name"]:
+                        continue
+                    other_cap = get_node_max_vcpus(proxmox, other_name)
+                    if other_cap is not None and other_cap >= requested_cpus:
+                        capable.append(f"{other_name} ({other_cap})")
+                if capable:
+                    console.print(
+                        f"[yellow]Nodes that could host {requested_cpus} vCPUs: "
+                        f"{', '.join(capable)}[/yellow]"
+                    )
+                    console.print(
+                        "[dim]Going back to node selection so you can pick "
+                        "one of those (press ESC again to back up further "
+                        "if you'd rather reduce the vCPU count instead).[/dim]"
+                    )
+                else:
+                    console.print(
+                        f"[red]No nodes in this cluster report a "
+                        f"{requested_cpus}-vCPU cap.[/red]\n"
+                        "[dim]Reduce the vCPU count in the deployment "
+                        "and try again.[/dim]"
+                    )
+                console.print()
+                return BACK
+
         return {**s, "image_storage_name": image_storage_name,
                 "image_filename": image_filename, "image_url": image_url,
                 "image_refresh": image_refresh, "catalog": catalog}
@@ -851,11 +896,47 @@ def main() -> None:
         return {**s, "next_vmid": next_vmid, "bridge": bridge, "now_str": now_str,
                 "pub_key_path": pub_key_path, "pub_key_encoded": pub_key_encoded}
 
+    # VM-specific node step: knows about cpu_baseline so silent auto-pick
+    # filters baseline-incompatible nodes (proxmox01-03's Sandy/Ivy Bridge boxes
+    # for x86-64-v3 images, etc.). Interactive mode still gets the same
+    # behavior; the post-image baseline check at step_image catches mismatches
+    # when the operator picked a node *before* settling on an image.
+    _vm_required_flags_cache: dict[str, set[str]] = {}
+    def step_node_vm(s):
+        memory_mb = int(float(s["memory_gb_str"]) * 1024)
+        try:
+            requested_cpus = int(s.get("cpus_str", "0") or 0)
+        except (TypeError, ValueError):
+            requested_cpus = 0
+        # Pre-resolve baseline from the deployment file if it carries a known
+        # image. Silent mode always has cloud_image_filename set; interactive
+        # mode may not yet — in that case skip the baseline filter and let the
+        # post-image-step check catch any mismatch.
+        required_flags: set[str] | None = None
+        image_filename = str(deploy.get("cloud_image_filename", "")).strip()
+        if image_filename:
+            catalog = _vm_required_flags_cache.get("__catalog__")
+            if catalog is None:
+                catalog = load_cloud_images()
+                _vm_required_flags_cache["__catalog__"] = catalog
+            baseline = lookup_cpu_baseline_in_catalog(catalog, image_filename)
+            if baseline:
+                required_flags = set(required_flags_for_cpu_type(baseline))
+                if required_flags:
+                    decorate_nodes_with_cpu_flags(proxmox, nodes)
+        r = prompt_node_selection(nodes, deploy, silent, memory_mb, s["memory_gb_str"],
+                                  cpu_threshold, ram_threshold, nav=True,
+                                  requested_cpus=requested_cpus,
+                                  required_flags=required_flags)
+        if r is BACK:
+            return BACK
+        return {**s, "node_name": r}
+
     ws = run_wizard_steps([
         _ws["hostname"], _ws["cpus"], _ws["memory"], _ws["disk"], _ws["vlan"], _ws["password"],
         _ws["package_profile"], _ws["extra_packages"],
         step_ip, step_prefix, step_gateway,
-        _ws["node"], step_image, step_storage, step_confirm,
+        step_node_vm, step_image, step_storage, step_confirm,
     ])
 
     # Unpack wizard state into local variables for the rest of the deploy flow
@@ -896,6 +977,15 @@ def main() -> None:
     # Hard error if the chosen node can't run the requested cpu_type — avoids
     # a 10-minute first-boot wait that ends in a kernel-panic reboot loop.
     check_node_cpu_baseline(proxmox, node_name, cpu_type, silent=silent)
+
+    # ── vCPU max check ──
+    # Proxmox rejects qm start with "MAX <n> vcpus allowed per VM on this node"
+    # after image import has already happened — preflight against the cap.
+    try:
+        cluster_nodes = [n["node"] for n in proxmox.nodes.get() if n.get("status") == "online"]
+    except Exception:
+        cluster_nodes = []
+    check_node_vcpu_max(proxmox, cluster_nodes, node_name, int(cpus_str), silent=silent)
 
     # ═══════════════════════════════════════════
     # Step 1/6: Create VM

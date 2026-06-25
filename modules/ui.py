@@ -369,18 +369,29 @@ def prompt_extra_packages(deploy: dict, silent: bool, nav: bool = False,
 def prompt_node_selection(nodes: list[dict], deploy: dict, silent: bool,
                           memory_mb: int, memory_gb_str: str,
                           cpu_threshold: float, ram_threshold: float,
-                          nav: bool = False) -> str:
+                          nav: bool = False,
+                          requested_cpus: int = 0,
+                          required_flags: set[str] | None = None) -> str:
     """Interactive node selection with resource filtering. Returns node name.
 
     When nav=True, prepends ← Go Back and returns BACK on ESC instead of sys.exit.
+    requested_cpus: if > 0, hide nodes whose per-VM vCPU cap is below it.
+    required_flags: if non-empty, hide nodes missing any of these CPU flags
+    (nodes must have `cpu_flags` populated — see `decorate_nodes_with_cpu_flags`).
     """
     from modules.validation import node_passes_filter
     from modules.proxmox import smart_size
-    filtered_nodes = [n for n in nodes if node_passes_filter(n, memory_mb, cpu_threshold, ram_threshold)]
+    filtered_nodes = [
+        n for n in nodes
+        if node_passes_filter(n, memory_mb, cpu_threshold, ram_threshold,
+                              requested_cpus, required_flags)
+    ]
     if not filtered_nodes:
+        cpu_note = f", vCPUs ≥{requested_cpus}" if requested_cpus > 0 else ""
+        flag_note = f", CPU flags {sorted(required_flags)}" if required_flags else ""
         console.print(
             f"[yellow]Warning: No nodes pass the resource filter "
-            f"(CPU <85%, RAM after +{memory_gb_str} GB <95%). Showing all nodes.[/yellow]"
+            f"(CPU <85%, RAM after +{memory_gb_str} GB <95%{cpu_note}{flag_note}). Showing all nodes.[/yellow]"
         )
         filtered_nodes = nodes
 
@@ -551,8 +562,17 @@ def make_common_wizard_steps(
 
     def step_node(s):
         memory_mb = int(float(s["memory_gb_str"]) * 1024)
+        # vCPU-aware filter: hide nodes whose per-VM vCPU cap can't fit the
+        # requested cpus, so the operator can't accidentally pick a node that
+        # would fail at qm start (BUG-013). cpus_str is set by the cpus wizard
+        # step earlier in the chain.
+        try:
+            requested_cpus = int(s.get("cpus_str", "0") or 0)
+        except (TypeError, ValueError):
+            requested_cpus = 0
         r = prompt_node_selection(nodes, deploy, silent, memory_mb, s["memory_gb_str"],
-                                  cpu_threshold, ram_threshold, nav=True)
+                                  cpu_threshold, ram_threshold, nav=True,
+                                  requested_cpus=requested_cpus)
         if r is BACK:
             return BACK
         return {**s, "node_name": r}

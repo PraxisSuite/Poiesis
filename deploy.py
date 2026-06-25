@@ -495,9 +495,18 @@ def main() -> None:
                 live.update(make_renderable())
 
             with ThreadPoolExecutor(max_workers=parallel) as executor:
-                for job_num, (list_i, disp_i, path, kind) in enumerate(valid_jobs):
-                    if stagger and job_num > 0:
-                        time.sleep(stagger)
+                # Per-node stagger: API/SFTP/cloud-init contention is per-node,
+                # so jobs targeting different nodes shouldn't wait on each other.
+                node_last_start: dict[str, float] = {}
+                for list_i, disp_i, path, kind in valid_jobs:
+                    if stagger:
+                        target_node = peek_node(path) or ""
+                        last = node_last_start.get(target_node)
+                        if last is not None:
+                            wait = stagger - (time.time() - last)
+                            if wait > 0:
+                                time.sleep(wait)
+                        node_last_start[target_node] = time.time()
                     f = executor.submit(
                         deploy_one, path, kind, running_vmids, passthrough,
                         disp_i, total, on_status,

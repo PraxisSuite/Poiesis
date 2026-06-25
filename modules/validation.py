@@ -213,15 +213,44 @@ def dry_run_validate_and_load(args: argparse.Namespace, validate_fn) -> tuple[di
 
 
 def node_passes_filter(n: dict, memory_mb: int, cpu_threshold: float = 0.85,
-                       ram_threshold: float = 0.95) -> bool:
-    """Return True if a node can accommodate the requested resources."""
+                       ram_threshold: float = 0.95,
+                       requested_cpus: int = 0,
+                       required_flags: set[str] | None = None) -> bool:
+    """Return True if a node can accommodate the requested resources.
+
+    requested_cpus: if > 0, also exclude nodes whose `maxcpu` (per-VM vCPU cap)
+    is below the requested count. Defaults to 0 (no vCPU filtering, preserves
+    pre-BUG-013 behavior for callers that don't pass it).
+
+    required_flags: if non-empty, exclude nodes whose `cpu_flags` set does not
+    contain all of them. Defaults to None (no flag filtering). Callers must
+    have populated `n["cpu_flags"]` first (see `decorate_nodes_with_cpu_flags`).
+    """
     if n["cpu"] >= cpu_threshold:
         return False
     if n["maxmem"] > 0:
         used_after = n["mem"] + memory_mb * 1024 * 1024
         if used_after / n["maxmem"] >= ram_threshold:
             return False
+    if requested_cpus > 0 and n.get("maxcpu", 0) and requested_cpus > n["maxcpu"]:
+        return False
+    if required_flags:
+        node_flags = n.get("cpu_flags") or set()
+        if not required_flags.issubset(node_flags):
+            return False
     return True
+
+
+def decorate_nodes_with_cpu_flags(proxmox, nodes: list[dict]) -> None:
+    """Populate `cpu_flags` on each node dict in-place.
+
+    One /nodes/<n>/status call per node — cheap, runs in <1s total even for the
+    full cluster. Done lazily by the caller (deploy_vm.py wizard) so callers
+    that never use the flag filter don't pay the cost.
+    """
+    for n in nodes:
+        if "cpu_flags" not in n:
+            n["cpu_flags"] = get_node_cpu_flags(proxmox, n["name"])
 
 
 def required_flags_for_cpu_type(cpu_type: str) -> list[str]:
@@ -312,6 +341,59 @@ def check_node_cpu_baseline(proxmox, node: str, cpu_type: str,
         f"  [yellow]CPU on {node}: {node_model}[/yellow]\n"
         f"  [dim]Choose a different node, or set a lower `cpu_type` in the "
         f"deployment file (e.g. \"cpu_type\": \"x86-64-v2-AES\").[/dim]"
+    )
+    sys.exit(1)
+
+
+def get_node_max_vcpus(proxmox, node: str) -> int | None:
+    """Return the node's per-VM vCPU cap (cores × threads-per-core), or None on failure.
+
+    Proxmox enforces this at `qm start` time. /nodes/<node>/status exposes
+    `cpuinfo.cpus` (total threads across all sockets), which is the cap that
+    `MAX <n> vcpus allowed per VM on this node` reports.
+    """
+    try:
+        status = proxmox.nodes(node).status.get()
+        return int(status.get("cpuinfo", {}).get("cpus", 0)) or None
+    except Exception:
+        return None
+
+
+def check_node_vcpu_max(proxmox, nodes_iter, target_node: str,
+                        requested_cpus: int, silent: bool = False) -> None:
+    """Verify the target node allows the requested vCPU count for a single VM.
+
+    Hard error if not — Proxmox rejects `qm start` after VM creation + image
+    import, so this preflight saves the operator a wasted deploy cycle. Hints
+    list nodes in the cluster that *could* host this VM at the requested size.
+
+    `nodes_iter` is an iterable of node names (typically `cfg['proxmox']['nodes']`)
+    used only for the hint list — pass `[]` to skip the hint.
+    """
+    cap = get_node_max_vcpus(proxmox, target_node)
+    if cap is None:
+        console.print(f"  [dim]vCPU cap check skipped (could not query {target_node} status)[/dim]")
+        return
+    if requested_cpus <= cap:
+        console.print(f"  [green]✓ Node {target_node} allows {requested_cpus} vCPUs (cap: {cap})[/green]")
+        return
+
+    capable = []
+    for n in nodes_iter:
+        if n == target_node:
+            continue
+        n_cap = get_node_max_vcpus(proxmox, n)
+        if n_cap is not None and n_cap >= requested_cpus:
+            capable.append(f"{n} ({n_cap})")
+    hint = (
+        f"  [dim]Nodes that could host {requested_cpus} vCPUs: {', '.join(capable)}[/dim]"
+        if capable
+        else f"  [dim]No other node in the cluster reports a {requested_cpus}-vCPU cap.[/dim]"
+    )
+    console.print(
+        f"  [red]✗ Node {target_node} cannot run {requested_cpus} vCPUs: "
+        f"MAX {cap} vcpus allowed per VM on this node[/red]\n"
+        f"{hint}"
     )
     sys.exit(1)
 
