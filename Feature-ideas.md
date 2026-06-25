@@ -1581,7 +1581,9 @@ When absent, behavior stays the same as today (use `vm.cpu_type` from `config.ya
 2. Catalog `cpu_baseline` field — image-aware default
 3. `config.yaml` `vm.cpu_type` — cluster-wide default
 
-### Pairs naturally with auto-node-pick
+### Pairs naturally with auto-node-pick — **Implemented**
+
+> **Status: Implemented 2026-06-24.** `deploy_vm.py:step_image` now performs a post-image-selection CPU-compatibility check: if the chosen image has `cpu_baseline` set and the already-selected node is missing required flags, the wizard prints the missing flag list, queries every other node in the cluster, lists the compatible alternatives inline, and returns BACK so the operator lands on the node-selection step to pick a working node. Skipped when (a) running in silent mode (the existing `check_node_cpu_baseline` preflight handles it with the same fail-fast guarantee), or (b) the deployment JSON specifies an explicit `cpu_type` override (operator knowingly takes responsibility). New public helpers `required_flags_for_cpu_type` and `get_node_cpu_flags` in `modules/validation.py`.
 
 If the chosen node fails `check_node_cpu_baseline`, surface a "node X can't run this image; try Y or Z" recommendation by querying every node's `cpuinfo.flags` once at startup and filtering the node-picker list.
 

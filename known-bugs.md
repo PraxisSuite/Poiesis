@@ -11,7 +11,7 @@ work. For user-reported bugs or feature requests, open an issue at:
 https://github.com/PraxisSuite/Poiesis/issues
 
 **Conventions:**
-- Bug IDs are sequential and never reused. Next ID: **BUG-013**.
+- Bug IDs are sequential and never reused. Next ID: **BUG-016**.
 - New bugs go into the `# Known Bugs / Issues` section with the next available ID.
 - When a bug is fixed, move it to the **top** of the `# FIXED Bugs / Issues` section
   (most recently fixed first) and update Status, Date Fixed, and add a Fix Applied section.
@@ -58,9 +58,151 @@ If the bug is open, describe any workaround. If none exists, state that explicit
 # Known Bugs / Issues
 ---
 
+## BUG-015 — `deploy.py --stagger` delays globally, not per-node — wastes time for cross-node batches
+
+**Status:** Open
+**Severity:** Low (functionality is correct — just slower than necessary when the batch spans multiple Proxmox nodes)
+**Affected script:** `deploy.py` (batch dispatcher, the `time.sleep(stagger)` call between job submissions)
+**First observed:** 2026-06-24, deploying a 5-host batch (3 web LXCs to `proxmoxb01`, 1 db LXC to `proxmoxb02`, 1 mw VM to `proxmox01`) with `--parallel 2 --stagger 60`. Noticed by the operator: stagger fired between every submission regardless of target node, costing 60–240 seconds of wait on jobs (`db01`, `mw01`) targeting nodes with no other deploy contending for them.
+**Date Added:** 2026-06-24
+
+### Root Cause
+
+`deploy.py:498-500` (current implementation):
+
+```python
+for job_num, (list_i, disp_i, path, kind) in enumerate(valid_jobs):
+    if stagger and job_num > 0:
+        time.sleep(stagger)
+    f = executor.submit(deploy_one, path, kind, ...)
+```
+
+The stagger is applied between every *job submission* to the `ThreadPoolExecutor` — purely on enumeration order, independent of which node the job targets. The original intent (per `--stagger`'s help text and `docs/batch.md`) was to spread early-deploy load on the Proxmox API + SFTP + cloud-init burst — but those contention sources are **per-node**, not per-cluster. Two unrelated Proxmox nodes have separate APIs, separate SFTP servers, separate cloud-init storms.
+
+Example with `--parallel 2 --stagger 60` and 5 jobs (3 on `proxmoxb01`, 1 on `proxmoxb02`, 1 on `proxmox01`):
+
+| Job # | Hostname | Node | Submitted at | Correct timing |
+|---|---|---|---|---|
+| 0 | web01 | proxmoxb01 | t=0 | t=0 ✓ |
+| 1 | web02 | proxmoxb01 | t=60 | t=60 ✓ (same node — stagger useful) |
+| 2 | web03 | proxmoxb01 | t=120 | t=120 ✓ (same node) |
+| 3 | db01 | proxmoxb02 | t=180 | t=0 ✗ (different node — could have started immediately) |
+| 4 | mw01 | proxmox01 | t=240 | t=0 ✗ (different node) |
+
+`db01` waited 180s, `mw01` waited 240s of stagger they didn't need.
+
+### Fix shape (not yet implemented)
+
+Track the last submission time **per target node** and only sleep against that node's history:
+
+```python
+node_last_start: dict[str, float] = {}
+for job_num, (list_i, disp_i, path, kind) in enumerate(valid_jobs):
+    target_node = _node_of(path)   # cheap JSON read, parses 'node' field
+    last = node_last_start.get(target_node)
+    if stagger and last is not None:
+        wait = stagger - (time.time() - last)
+        if wait > 0:
+            time.sleep(wait)
+    node_last_start[target_node] = time.time()
+    f = executor.submit(deploy_one, path, kind, ...)
+```
+
+Helper `_node_of(path)` reads the JSON's `node` field — already done elsewhere in deploy.py for routing.
+
+Behavior after the fix on the same 5-job batch:
+- `web01` → t=0
+- `web02` → t=60 (1st on b01 needed)
+- `web03` → t=120 (2nd on b01 needed)
+- `db01` → t=0 (no prior on b02 — no wait)
+- `mw01` → t=0 (no prior on p01 — no wait)
+
+Cross-node parallelism is preserved; within-node staggering is preserved; total batch time drops significantly when the batch fans out across the cluster.
+
+### Workaround
+
+For batches that span multiple nodes, pass `--stagger 0` and rely on `--parallel N` alone to bound concurrency. Downside: jobs targeting the same node burst-start at once. Tradeoff worth it for fan-out cases.
+
+### Documentation update
+
+`docs/batch.md`'s `--stagger` description currently reads "Seconds between each job start in parallel mode (default: 45...)" — should be updated to clarify the per-node-vs-global behavior once the fix lands.
+
+**Status:** Open
+**Severity:** Medium (failure is loud and fast — `qm start` rejects it before any first-boot work — but the operator wastes a wizard cycle / batch slot on something a preflight could have caught instantly)
+**Affected script:** `deploy_vm.py`
+**First observed:** 2026-06-24, deploying `mw01` with `cpus: 16` to `proxmox01` (Intel i5-10600 = 6c12t):
+
+```
+─── Step 3/7: Starting VM ───
+✗ Failed to start VM: Proxmox task failed: MAX 12 vcpus allowed per VM on this node
+```
+
+**Date Added:** 2026-06-24
+
+### Root Cause
+
+Proxmox enforces a per-VM vCPU cap that depends on the node's CPU topology (typically `cores × threads-per-core`, but configurable). Poiesis's preflight currently checks:
+- VLAN exists on the target node
+- CPU baseline (microarch flags) is supported
+- Bridges exist (BIG-IP)
+- Appliance image staged (BIG-IP)
+- Static IP not in use
+
+It does **not** check the requested `cpus` count against the node's max. The error surfaces at VM start (Step 3), after VM creation + image import. Wasted work depends on the path: for VMs with a cached cloud image, only a few seconds; for first-deploy where the image needs downloading, multiple minutes.
+
+### Fix shape (not yet implemented)
+
+Add a preflight that queries the node's max via the Proxmox API (`/nodes/<node>/status` exposes `cpuinfo.cpus` for the threads-per-socket × sockets total). Compare against the requested `cpus`. Fail fast with the same error message Proxmox gives, plus a hint listing which nodes in the cluster *could* host this VM.
+
+Hint composition pairs naturally with the auto-node-pick infrastructure from Feature #3 — same iterate-nodes-once pattern, just adding a cpus check alongside the cpu-baseline-flags check.
+
+### Workaround
+
+Match the VM's `cpus` to the target node's capacity at deployment-file write time. For 16+ vCPU VMs in this cluster, target proxmoxg03 or proxmoxg04 (Xeon E5-2680 v4 = 14c28t) — not proxmox01-03 (i5 family = 6c12t).
+
+---
+
 
 ---
 # FIXED Bugs / Issues
+---
+
+## BUG-014 — Ansible post-deploy fails on openSUSE Leap 16 LXC: `Group wheel does not exist`
+
+**Status:** Fixed
+**Severity:** High (blocks every openSUSE Leap 16 LXC deploy at the "Create user" task — VM deploys of the same image are unaffected because openSUSE VMs come with `wheel` pre-created)
+**Affected script:** `deploy_lxc.py` → `ansible/post-deploy.yml` (and `post-deploy-vm.yml`, defensively)
+**First observed:** 2026-06-24, deploying `db01` (openSUSE Leap 16 LXC, `vars/Suse.yml`'s `sudo_group: wheel`) on `proxmoxb02`:
+
+```
+TASK [Create 'dad' user] *******************************************************
+fatal: [10.200.200.145]: FAILED! => {"changed": false, "msg": "Group wheel does not exist"}
+```
+
+The container created cleanly, network came up (got IP `10.200.200.145`), bootstrap succeeded (BUG-012's family-aware bootstrap worked), Ansible connected, 6 tasks passed — then the user-creation task tried to add the new account to the `wheel` group and failed because the group doesn't exist on this template.
+
+**Date Added:** 2026-06-24
+**Date Fixed:** 2026-06-24
+
+### Root Cause
+
+`ansible/vars/Suse.yml` defines `sudo_group: wheel`. The user-creation task uses `groups: "{{ sudo_group }}"`. Ansible's `user:` module requires every group listed in `groups:` to already exist — it does **not** auto-create secondary groups. The openSUSE Leap 16 LXC template (`opensuse-16.0-default_*.tar.xz`) ships without the `wheel` group pre-created.
+
+VMs of the same image don't hit this because openSUSE VM cloud images ship with `wheel` pre-created via the standard sysadmin user-account-conventions setup that runs during the cloud-init `users` module on first boot. LXC templates skip that setup.
+
+### Fix Applied
+
+Both `ansible/post-deploy.yml` (LXC) and `ansible/post-deploy-vm.yml` (VM) — added an explicit `group:` task right before the user-creation task:
+
+```yaml
+- name: Ensure sudo group '{{ sudo_group }}' exists
+  group:
+    name: "{{ sudo_group }}"
+    state: present
+```
+
+Idempotent — no-op when the group is already there (Debian/Ubuntu's `sudo`, RHEL/Fedora/Alpine/FreeBSD's `wheel` on most templates). Just unblocks the openSUSE LXC path (and any future template that doesn't ship the family's conventional sudo group).
+
 ---
 
 ## BUG-012 — `deploy_lxc.py` bootstrap step is Debian/Ubuntu-only (ssh.service name, /etc/ssh/sshd_config edits)
