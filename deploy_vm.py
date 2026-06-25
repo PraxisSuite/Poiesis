@@ -113,6 +113,8 @@ from modules.lib import (
     write_history,
     check_vlan_exists,
     check_node_cpu_baseline,
+    required_flags_for_cpu_type,
+    get_node_cpu_flags,
     resolve_tag_colors,
     apply_tag_colors,
     add_common_deploy_args,
@@ -683,6 +685,65 @@ def main() -> None:
         if r is BACK:
             return BACK
         image_storage_name, image_filename, image_url, image_refresh = r
+
+        # Auto-node-pick filter: if the selected image has a `cpu_baseline`
+        # set in cloud-images.yaml and the operator's already-chosen node
+        # can't run it, surface the mismatch *now* (not 15 sec later at
+        # check_node_cpu_baseline preflight) and offer ESC-back to re-pick
+        # the node. Compatible nodes are listed inline so the user knows
+        # which one to switch to.
+        #
+        # Silent mode skips this — the deployment JSON / vm.cpu_type default
+        # resolution chain is already authoritative there, and the existing
+        # check_node_cpu_baseline preflight catches an incompatible combo
+        # with the same fail-fast guarantee.
+        cpu_baseline = lookup_cpu_baseline_in_catalog(catalog, image_filename)
+        if cpu_baseline and not silent and not deploy.get("cpu_type"):
+            # Deployment-JSON cpu_type override (when present) takes precedence
+            # over the catalog hint — we treat that as "operator knows what
+            # they're doing" and skip the baseline filter here, leaving the
+            # ordinary preflight to enforce it.
+            required = required_flags_for_cpu_type(cpu_baseline)
+            selected_flags = get_node_cpu_flags(proxmox, s["node_name"])
+            missing = [f for f in required if f not in selected_flags]
+            if missing:
+                console.print()
+                console.print(
+                    f"[red]✗ Image [bold]{image_filename}[/bold] requires "
+                    f"cpu_baseline=[bold]{cpu_baseline}[/bold], but the "
+                    f"selected node [bold]{s['node_name']}[/bold] is missing "
+                    f"CPU flag(s): {', '.join(missing)}[/red]"
+                )
+                # Build the "try these instead" list — one Proxmox API call per
+                # node (cheap, <1s total even with the full cluster).
+                compatible = []
+                for n in nodes:
+                    other_name = n.get("node_name") or n.get("node")
+                    if other_name == s["node_name"]:
+                        continue
+                    other_flags = get_node_cpu_flags(proxmox, other_name)
+                    if all(f in other_flags for f in required):
+                        compatible.append(other_name)
+                if compatible:
+                    console.print(
+                        f"[yellow]Compatible nodes in this cluster: "
+                        f"{', '.join(compatible)}[/yellow]"
+                    )
+                    console.print(
+                        "[dim]Going back to node selection so you can pick "
+                        "one of those (press ESC again to back up further "
+                        "if you'd rather change the image instead).[/dim]"
+                    )
+                else:
+                    console.print(
+                        "[red]No nodes in this cluster can run this image's "
+                        f"cpu_baseline.[/red]\n"
+                        "[dim]Either pick a different image, or override "
+                        "cpu_type explicitly in the deployment JSON.[/dim]"
+                    )
+                console.print()
+                return BACK
+
         return {**s, "image_storage_name": image_storage_name,
                 "image_filename": image_filename, "image_url": image_url,
                 "image_refresh": image_refresh, "catalog": catalog}

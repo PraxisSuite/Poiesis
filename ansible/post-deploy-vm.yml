@@ -80,6 +80,15 @@
     # --------------------------------------------------------
     # User: {{ addusername }} (same password as root)
     # --------------------------------------------------------
+    # Some templates don't ship with the `wheel` group pre-created. The
+    # `user:` module's `groups:` parameter requires secondary groups to
+    # already exist — Ansible doesn't auto-create them. Create it explicitly
+    # first so user creation succeeds on every distro.
+    - name: Ensure sudo group '{{ sudo_group }}' exists
+      group:
+        name: "{{ sudo_group }}"
+        state: present
+
     - name: Create '{{ addusername }}' user
       user:
         name: "{{ addusername }}"

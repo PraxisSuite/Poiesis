@@ -173,6 +173,8 @@ preflight: true
 # Set to an empty list to disable auto-nesting entirely.
 lxc_auto_nesting_templates:
   - ubuntu-24.04
+  - ubuntu-25.04
+  - ubuntu-26.04
 
 # DNS registration
 # Set enabled: false to skip automatic DNS registration and manage records manually.

@@ -51,6 +51,8 @@ from modules.validation import (
     node_passes_filter,
     check_vlan_exists,
     check_node_cpu_baseline,
+    required_flags_for_cpu_type,
+    get_node_cpu_flags,
     validate_lxc_deployment,
     validate_vm_deployment,
     validate_bigip_deployment,

@@ -224,6 +224,34 @@ def node_passes_filter(n: dict, memory_mb: int, cpu_threshold: float = 0.85,
     return True
 
 
+def required_flags_for_cpu_type(cpu_type: str) -> list[str]:
+    """Public alias for `_required_flags_for_cpu_type`.
+
+    Used by deploy_vm.py to compute compatibility lists at the image-selection
+    step for the auto-node-pick filter. Kept thin so the private function
+    remains the implementation and this stays a stable public seam.
+    """
+    return _required_flags_for_cpu_type(cpu_type)
+
+
+def get_node_cpu_flags(proxmox, node: str) -> set[str]:
+    """Fetch the set of /proc/cpuinfo flags advertised by a Proxmox node.
+
+    Used to determine whether a node can run a given QEMU `-cpu` model
+    (paired with `required_flags_for_cpu_type` for the actual comparison).
+    Returns an empty set on query failure rather than raising — callers
+    should treat "no flags reported" as "can't confidently say".
+    """
+    try:
+        status = proxmox.nodes(node).status.get()
+        flags_str = status.get("cpuinfo", {}).get("flags", "") or ""
+        if isinstance(flags_str, str):
+            return set(flags_str.split())
+        return set()
+    except Exception:
+        return set()
+
+
 def _required_flags_for_cpu_type(cpu_type: str) -> list[str]:
     """CPU /proc/cpuinfo flag names required for a given QEMU `-cpu` model.
 

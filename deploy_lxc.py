@@ -808,7 +808,15 @@ def main() -> None:
     memory_mb        = int(float(memory_gb_str) * 1024)
 
     # ── Auto-nesting: silently add nesting=1 for templates that require it ──
-    _auto_nesting_patterns = cfg.get("lxc_auto_nesting_templates", ["ubuntu-24.04"])
+    # Ubuntu's systemd-networkd uses systemd's credentials feature starting with
+    # systemd 255 (Ubuntu 24.04+). Without nesting=1 the container's
+    # systemd-networkd exits 243/CREDENTIALS at boot, eth0 never gets DHCP, and
+    # the deploy times out at IP discovery. nesting=1 is benign on older Ubuntu
+    # — it doesn't hurt anything; just unblocks the credentials path.
+    _auto_nesting_patterns = cfg.get(
+        "lxc_auto_nesting_templates",
+        ["ubuntu-24.04", "ubuntu-25.04", "ubuntu-26.04"],
+    )
     if (
         any(pat in template_name for pat in _auto_nesting_patterns)
         and "nesting=1" not in lxc_features

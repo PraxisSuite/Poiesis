@@ -55,6 +55,16 @@
     # --------------------------------------------------------
     # User: {{ addusername }} (same password as root)
     # --------------------------------------------------------
+    # Some LXC templates (notably openSUSE Leap 16) don't ship with the
+    # `wheel` group pre-created. The `user:` module's `groups:` parameter
+    # requires the group to already exist — Ansible doesn't auto-create
+    # secondary groups. Create it explicitly first so user creation succeeds
+    # on every distro. No-op when the group already exists.
+    - name: Ensure sudo group '{{ sudo_group }}' exists
+      group:
+        name: "{{ sudo_group }}"
+        state: present
+
     - name: Create '{{ addusername }}' user
       user:
         name: "{{ addusername }}"
