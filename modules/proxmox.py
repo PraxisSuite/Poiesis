@@ -793,6 +793,26 @@ def _load_lxc_bootstrap_config() -> dict:
         raise RuntimeError(f"lxc-bootstrap.yaml is not valid YAML: {e}") from e
 
 
+def lookup_lxc_template_baseline(template_name: str) -> str | None:
+    """Return the cpu_baseline (e.g. `x86-64-v3`) required by an LXC template, or None.
+
+    Patterns live in `lxc-bootstrap.yaml`'s `template_cpu_baselines:` section
+    and are matched with `re.search`. First-match wins. Returns None when no
+    pattern matches (most templates have no baseline requirement).
+    """
+    if not template_name:
+        return None
+    import re
+    cfg = _load_lxc_bootstrap_config()
+    patterns = cfg.get("template_cpu_baselines") or []
+    for entry in patterns:
+        pat = entry.get("pattern")
+        baseline = entry.get("cpu_baseline")
+        if pat and baseline and re.search(pat, template_name):
+            return baseline
+    return None
+
+
 def _detect_lxc_family(ssh: paramiko.SSHClient, vmid: int,
                        families_cfg: dict) -> tuple[str, dict]:
     """Detect the OS family inside an LXC by reading /etc/os-release.

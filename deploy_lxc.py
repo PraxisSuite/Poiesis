@@ -112,6 +112,12 @@ from modules.lib import (
     prompt_node_selection,
     write_history,
     check_vlan_exists,
+    check_node_vcpu_max,
+    check_node_cpu_baseline,
+    get_node_max_vcpus,
+    get_node_cpu_flags,
+    required_flags_for_cpu_type,
+    decorate_nodes_with_cpu_flags,
     resolve_lxc_features,
     resolve_tag_colors,
     features_list_to_proxmox_str,
@@ -136,6 +142,7 @@ from modules.lib import (
     apply_lxc_features_ssh,
     start_lxc,
     find_lxc_by_hostname,
+    lookup_lxc_template_baseline,
 )
 
 console = Console()
@@ -775,11 +782,48 @@ def main() -> None:
                 sys.exit(0)
         return {**s, "next_vmid": next_vmid, "bridge": bridge, "now_str": now_str}
 
+    # LXC-specific node step: parallels deploy_vm.py's step_node_vm. Looks up
+    # the template's cpu_baseline (from lxc-bootstrap.yaml template_cpu_baselines
+    # patterns) and filters baseline-incompatible nodes out of the picker, so
+    # silent auto-pick won't accidentally select a Sandy/Ivy Bridge host for a
+    # RHEL 10 LXC. Interactive mode benefits the same way; deploy-file-driven
+    # silent mode is also covered.
+    def step_node_lxc(s):
+        memory_mb = int(float(s["memory_gb_str"]) * 1024)
+        try:
+            requested_cpus = int(s.get("cpus_str", "0") or 0)
+        except (TypeError, ValueError):
+            requested_cpus = 0
+        required_flags: set[str] | None = None
+        # Resolve the template name from the deployment file. Silent mode
+        # always has template_name set; interactive mode may not yet — in that
+        # case the post-template-step check (TODO if needed) would catch it,
+        # though no LXC interactive flow today hits the baseline issue because
+        # the only baseline-requiring templates are RHEL 10 family.
+        template_name = str(deploy.get("template_name", "")).strip()
+        if not template_name:
+            template_volid = str(deploy.get("template_volid", "")).strip()
+            if template_volid and "/" in template_volid:
+                template_name = template_volid.split("/")[-1]
+        if template_name:
+            baseline = lookup_lxc_template_baseline(template_name)
+            if baseline:
+                required_flags = set(required_flags_for_cpu_type(baseline))
+                if required_flags:
+                    decorate_nodes_with_cpu_flags(proxmox, nodes)
+        r = prompt_node_selection(nodes, deploy, silent, memory_mb, s["memory_gb_str"],
+                                  cpu_threshold, ram_threshold, nav=True,
+                                  requested_cpus=requested_cpus,
+                                  required_flags=required_flags)
+        if r is BACK:
+            return BACK
+        return {**s, "node_name": r}
+
     ws = run_wizard_steps([
         _ws["hostname"], _ws["cpus"], _ws["memory"], _ws["disk"], _ws["vlan"], _ws["password"],
         step_ip, step_prefix, step_gateway,
         _ws["package_profile"], _ws["extra_packages"], step_lxc_features,
-        _ws["node"], step_template, step_storage, step_confirm,
+        step_node_lxc, step_template, step_storage, step_confirm,
     ])
 
     # Unpack wizard state into local variables for the rest of the deploy flow
@@ -846,6 +890,24 @@ def main() -> None:
 
     # ── VLAN existence check ──
     check_vlan_exists(proxmox, node_name, bridge, vlan_str, silent=silent)
+
+    # ── CPU baseline check ──
+    # LXCs share the host kernel but userspace binaries still need the host
+    # CPU's instruction set. A Rocky 10 LXC's `dnf` etc. will SIGILL on a
+    # Sandy/Ivy Bridge host that lacks AVX2/BMI even though the container
+    # itself starts. Same fail-fast policy as deploy_vm.py.
+    lxc_cpu_baseline = lookup_lxc_template_baseline(template_name)
+    if lxc_cpu_baseline:
+        check_node_cpu_baseline(proxmox, node_name, lxc_cpu_baseline, silent=silent)
+
+    # ── vCPU max check ──
+    # Proxmox enforces the same per-VM/CT vCPU cap on LXC `cores` as on VM
+    # `cpus`. Fail fast against the cap instead of letting `pct create` reject.
+    try:
+        cluster_nodes = [n["node"] for n in proxmox.nodes.get() if n.get("status") == "online"]
+    except Exception:
+        cluster_nodes = []
+    check_node_vcpu_max(proxmox, cluster_nodes, node_name, int(cpus_str), silent=silent)
 
     # ── Duplicate hostname check ──
     existing = find_lxc_by_hostname(proxmox, hostname)

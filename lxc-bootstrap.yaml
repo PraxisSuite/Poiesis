@@ -84,6 +84,29 @@ init_systems:
     enable_now: "rc-update add {service} default && rc-service {service} start"
     restart: "rc-service {service} restart"
 
+# Per-template CPU baseline. Pattern-matched against the template filename
+# (everything after the storage prefix, e.g. "rockylinux-10-default_...tar.xz").
+# When a pattern matches, the corresponding QEMU `-cpu` model name is the
+# required microarch baseline for that template — the deploy preflight will
+# reject nodes that don't carry the matching CPU flags, mirroring the
+# `cpu_baseline` field in cloud-images.yaml for VMs.
+#
+# Rationale: LXCs share the host kernel, but their userspace binaries are
+# compiled for a specific microarch. Rocky 10 / Alma 10 / CentOS Stream 10
+# all ship userspace built against the RHEL 10 x86-64-v3 baseline — running
+# any of them on a Sandy/Ivy Bridge host produces SIGILL crashes in dnf,
+# rpm, and other tools at runtime even though the container itself starts.
+#
+# First-match wins. Patterns are Python `re.search`, anchored loosely so
+# new minor versions are caught automatically.
+template_cpu_baselines:
+  - pattern: "rockylinux-1[0-9]"
+    cpu_baseline: x86-64-v3
+  - pattern: "almalinux-1[0-9]"
+    cpu_baseline: x86-64-v3
+  - pattern: "centos-1[0-9]"
+    cpu_baseline: x86-64-v3
+
 # sshd_config drop-in: works on every modern OpenSSH regardless of
 # whether the main /etc/ssh/sshd_config file exists (Rocky 10 LXC
 # templates don't ship one — see known-bugs.md BUG-012). The

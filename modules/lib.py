@@ -114,6 +114,7 @@ from modules.proxmox import (
     start_lxc,
     get_running_vmids,
     find_lxc_by_hostname,
+    lookup_lxc_template_baseline,
 )
 
 # ── bind (DNS) ───────────────────────────────────────────────────────────────
