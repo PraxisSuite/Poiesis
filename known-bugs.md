@@ -58,17 +58,24 @@ If the bug is open, describe any workaround. If none exists, state that explicit
 # Known Bugs / Issues
 ---
 
+*(No open bugs.)*
+
+---
+# FIXED Bugs / Issues
+---
+
 ## BUG-015 — `deploy.py --stagger` delays globally, not per-node — wastes time for cross-node batches
 
-**Status:** Open
-**Severity:** Low (functionality is correct — just slower than necessary when the batch spans multiple Proxmox nodes)
+**Status:** Fixed
+**Severity:** Low (functionality was correct — just slower than necessary when the batch spans multiple Proxmox nodes)
 **Affected script:** `deploy.py` (batch dispatcher, the `time.sleep(stagger)` call between job submissions)
 **First observed:** 2026-06-24, deploying a 5-host batch (3 web LXCs to `proxmoxb01`, 1 db LXC to `proxmoxb02`, 1 mw VM to `proxmox01`) with `--parallel 2 --stagger 60`. Noticed by the operator: stagger fired between every submission regardless of target node, costing 60–240 seconds of wait on jobs (`db01`, `mw01`) targeting nodes with no other deploy contending for them.
 **Date Added:** 2026-06-24
+**Date Fixed:** 2026-06-24
 
 ### Root Cause
 
-`deploy.py:498-500` (current implementation):
+`deploy.py` (prior implementation):
 
 ```python
 for job_num, (list_i, disp_i, path, kind) in enumerate(valid_jobs):
@@ -77,58 +84,34 @@ for job_num, (list_i, disp_i, path, kind) in enumerate(valid_jobs):
     f = executor.submit(deploy_one, path, kind, ...)
 ```
 
-The stagger is applied between every *job submission* to the `ThreadPoolExecutor` — purely on enumeration order, independent of which node the job targets. The original intent (per `--stagger`'s help text and `docs/batch.md`) was to spread early-deploy load on the Proxmox API + SFTP + cloud-init burst — but those contention sources are **per-node**, not per-cluster. Two unrelated Proxmox nodes have separate APIs, separate SFTP servers, separate cloud-init storms.
+The stagger was applied between every *job submission* to the `ThreadPoolExecutor` — purely on enumeration order, independent of which node the job targets. The original intent (per `--stagger`'s help text and `docs/batch.md`) was to spread early-deploy load on the Proxmox API + SFTP + cloud-init burst — but those contention sources are **per-node**, not per-cluster. Two unrelated Proxmox nodes have separate APIs, separate SFTP servers, separate cloud-init storms.
 
-Example with `--parallel 2 --stagger 60` and 5 jobs (3 on `proxmoxb01`, 1 on `proxmoxb02`, 1 on `proxmox01`):
+### Fix Applied
 
-| Job # | Hostname | Node | Submitted at | Correct timing |
-|---|---|---|---|---|
-| 0 | web01 | proxmoxb01 | t=0 | t=0 ✓ |
-| 1 | web02 | proxmoxb01 | t=60 | t=60 ✓ (same node — stagger useful) |
-| 2 | web03 | proxmoxb01 | t=120 | t=120 ✓ (same node) |
-| 3 | db01 | proxmoxb02 | t=180 | t=0 ✗ (different node — could have started immediately) |
-| 4 | mw01 | proxmox01 | t=240 | t=0 ✗ (different node) |
-
-`db01` waited 180s, `mw01` waited 240s of stagger they didn't need.
-
-### Fix shape (not yet implemented)
-
-Track the last submission time **per target node** and only sleep against that node's history:
+Track the last submission time **per target node** and only sleep against that node's history. `peek_node(path)` is already used elsewhere in `deploy.py` for routing, so the per-node key is essentially free:
 
 ```python
 node_last_start: dict[str, float] = {}
-for job_num, (list_i, disp_i, path, kind) in enumerate(valid_jobs):
-    target_node = _node_of(path)   # cheap JSON read, parses 'node' field
-    last = node_last_start.get(target_node)
-    if stagger and last is not None:
-        wait = stagger - (time.time() - last)
-        if wait > 0:
-            time.sleep(wait)
-    node_last_start[target_node] = time.time()
+for list_i, disp_i, path, kind in valid_jobs:
+    if stagger:
+        target_node = peek_node(path) or ""
+        last = node_last_start.get(target_node)
+        if last is not None:
+            wait = stagger - (time.time() - last)
+            if wait > 0:
+                time.sleep(wait)
+        node_last_start[target_node] = time.time()
     f = executor.submit(deploy_one, path, kind, ...)
 ```
 
-Helper `_node_of(path)` reads the JSON's `node` field — already done elsewhere in deploy.py for routing.
-
-Behavior after the fix on the same 5-job batch:
-- `web01` → t=0
-- `web02` → t=60 (1st on b01 needed)
-- `web03` → t=120 (2nd on b01 needed)
-- `db01` → t=0 (no prior on b02 — no wait)
-- `mw01` → t=0 (no prior on p01 — no wait)
-
 Cross-node parallelism is preserved; within-node staggering is preserved; total batch time drops significantly when the batch fans out across the cluster.
 
-### Workaround
+---
 
-For batches that span multiple nodes, pass `--stagger 0` and rely on `--parallel N` alone to bound concurrency. Downside: jobs targeting the same node burst-start at once. Tradeoff worth it for fan-out cases.
+## BUG-013 — `deploy_vm.py` doesn't preflight `cpus` against the node's per-VM vCPU cap
 
-### Documentation update
-
-`docs/batch.md`'s `--stagger` description currently reads "Seconds between each job start in parallel mode (default: 45...)" — should be updated to clarify the per-node-vs-global behavior once the fix lands.
-
-**Status:** Open
-**Severity:** Medium (failure is loud and fast — `qm start` rejects it before any first-boot work — but the operator wastes a wizard cycle / batch slot on something a preflight could have caught instantly)
+**Status:** Fixed
+**Severity:** Medium (failure is loud and fast — `qm start` rejects it before any first-boot work — but the operator wastes a wizard cycle / batch slot on something a preflight could catch instantly)
 **Affected script:** `deploy_vm.py`
 **First observed:** 2026-06-24, deploying `mw01` with `cpus: 16` to `proxmox01` (Intel i5-10600 = 6c12t):
 
@@ -138,33 +121,19 @@ For batches that span multiple nodes, pass `--stagger 0` and rely on `--parallel
 ```
 
 **Date Added:** 2026-06-24
+**Date Fixed:** 2026-06-24
 
 ### Root Cause
 
-Proxmox enforces a per-VM vCPU cap that depends on the node's CPU topology (typically `cores × threads-per-core`, but configurable). Poiesis's preflight currently checks:
-- VLAN exists on the target node
-- CPU baseline (microarch flags) is supported
-- Bridges exist (BIG-IP)
-- Appliance image staged (BIG-IP)
-- Static IP not in use
+Proxmox enforces a per-VM vCPU cap that depends on the node's CPU topology (typically `cores × threads-per-core`, but configurable). Poiesis's preflight checked VLAN existence, CPU baseline (microarch flags), bridges, appliance image staging, and static IP collisions — but **not** the requested `cpus` count against the node's max. The error surfaced at VM start (Step 3), after VM creation + image import. Wasted work depended on the path: for VMs with a cached cloud image, only a few seconds; for first-deploy where the image needed downloading, multiple minutes.
 
-It does **not** check the requested `cpus` count against the node's max. The error surfaces at VM start (Step 3), after VM creation + image import. Wasted work depends on the path: for VMs with a cached cloud image, only a few seconds; for first-deploy where the image needs downloading, multiple minutes.
+### Fix Applied
 
-### Fix shape (not yet implemented)
+Two layers:
 
-Add a preflight that queries the node's max via the Proxmox API (`/nodes/<node>/status` exposes `cpuinfo.cpus` for the threads-per-socket × sockets total). Compare against the requested `cpus`. Fail fast with the same error message Proxmox gives, plus a hint listing which nodes in the cluster *could* host this VM.
+1. **Wizard-stage filter** in `deploy_vm.py`'s `step_image` (interactive mode). After the operator picks a node, the same post-image filter that catches `cpu_baseline` mismatches now also catches `cpus > node-cap` mismatches — prints the error, lists nodes that *could* host the request with their caps, and returns BACK to node selection so the operator can pick another node without restarting the wizard. Pairs naturally with the existing CPU-baseline filter from Feature #3.
+2. **Hard preflight** via new `get_node_max_vcpus(proxmox, node)` and `check_node_vcpu_max(proxmox, nodes_iter, target_node, requested_cpus)` in `modules/validation.py`. The check queries `/nodes/<node>/status` for `cpuinfo.cpus` (total threads), compares against the requested vCPU count, and fails fast with the same message Proxmox would give plus a hint listing capable nodes. Wired in alongside `check_node_cpu_baseline` in `deploy_vm.py`'s preflight phase, so silent/file-driven deploys are also covered.
 
-Hint composition pairs naturally with the auto-node-pick infrastructure from Feature #3 — same iterate-nodes-once pattern, just adding a cpus check alongside the cpu-baseline-flags check.
-
-### Workaround
-
-Match the VM's `cpus` to the target node's capacity at deployment-file write time. For 16+ vCPU VMs in this cluster, target proxmoxg03 or proxmoxg04 (Xeon E5-2680 v4 = 14c28t) — not proxmox01-03 (i5 family = 6c12t).
-
----
-
-
----
-# FIXED Bugs / Issues
 ---
 
 ## BUG-014 — Ansible post-deploy fails on openSUSE Leap 16 LXC: `Group wheel does not exist`
