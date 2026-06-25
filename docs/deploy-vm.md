@@ -205,6 +205,14 @@ The check runs before any expensive SFTP/import work. If the node lacks a requir
 
 When the resolved value comes from anywhere other than the global default, the deploy wizard prints which source it came from — so you can see at a glance whether your override took, whether the catalog defaulted it for you, or whether the cluster-wide default applies.
 
+**Interactive auto-node-pick check.** In interactive mode, after you pick an image whose catalog entry has a `cpu_baseline` set, `deploy_vm.py` checks whether your already-selected node can actually run it. If not, the wizard:
+
+- Prints the specific missing CPU flag(s) (`avx2`, `bmi1`, `bmi2`, `fma`, `movbe`, `abm` for `x86-64-v3`)
+- Lists every other node in the cluster that **can** run the image (querying each node's `cpuinfo.flags` via the Proxmox API)
+- Returns to node selection so you can pick a compatible one without restarting the wizard
+
+This check is skipped when (a) the deployment JSON has an explicit `cpu_type` field (operator override always wins), or (b) the deploy is running in silent / batch mode — there, the existing `check_node_cpu_baseline` preflight still catches the same mismatch in ~15 seconds with the same error message, before any expensive SFTP work.
+
 ---
 
 ## FreeBSD Deployments (serial-console firstboot)
