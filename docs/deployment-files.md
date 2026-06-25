@@ -310,8 +310,8 @@ VM deployments (`deploy_vm.py`) support any cloud-init capable image. The Ansibl
 |---|---|---|
 | Ubuntu 26.04 LTS / 24.04 / 22.04 / 20.04 | Tested and verified | Fully supported (Debian family) |
 | Debian 13 / 12 / 11 | Tested and verified | Debian 13 (Trixie) required dropping `snmp-mibs-downloader` from the package list — see BUG-004 |
-| Rocky Linux 10 / 9 / 8 | Tested and verified (10) | Rocky 10 requires `cpu_type: x86-64-v3` in the deployment JSON (BUG-006) and needs CRB enabled to pull EPEL transitive deps (BUG-008); Rocky 8 also takes ~15 min for first-boot `dnf upgrade` |
-| AlmaLinux 10 / 9 / 8 | Tested and verified (10) | Same RHEL-10 baseline as Rocky 10; Alma enables CRB by default in cloud images |
+| Rocky Linux 10 / 9 / 8 | Tested and verified (10) | Rocky 10 requires `x86-64-v3` CPU baseline (BUG-006) — auto-resolved via the catalog's `cpu_baseline` field, so no operator action needed unless overriding. Needs CRB enabled to pull EPEL transitive deps (BUG-008). Rocky 8 also takes ~15 min for first-boot `dnf upgrade`. |
+| AlmaLinux 10 / 9 / 8 | Tested and verified (10) | Same RHEL-10 baseline as Rocky 10 (auto-resolved). Alma enables CRB by default in cloud images. |
 | CentOS Stream 10 / 9 | Should work | Same RHEL family — uses `RedHat.yml` and `pre-install-RedHat.yml` |
 | Fedora 44 / 43 | Tested and verified | EPEL skipped on Fedora (BUG-003) |
 | Oracle Linux 9 / 8 | Should work | Same RHEL family |

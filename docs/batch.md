@@ -41,7 +41,7 @@ Both scripts auto-detect whether each file is an LXC or VM deployment from the J
 | `--batch-dir DIR` | Deploy all `*.json` files in a directory alphabetically |
 | `--validate` | Validate all files and exit without deploying |
 | `--parallel N` | Max concurrent deployments (default: 3, use 1 for sequential) |
-| `--stagger SECS` | Seconds between each job start in parallel mode (default: 45, use 0 to disable). Spreads early-deploy load — Proxmox API requests, qcow uploads, cloud-init bursts — across time rather than firing all `--parallel` jobs at once. Ignored when `--parallel 1`. |
+| `--stagger SECS` | Seconds between each job start **per target node** in parallel mode (default: 45, use 0 to disable). Spreads early-deploy load — Proxmox API requests, qcow uploads, cloud-init bursts — across time, but only against the node a given job targets. Two jobs targeting different nodes never wait on each other (their APIs, SFTP servers, and cloud-init storms are independent), so cross-cluster batches start fanning out immediately. Ignored when `--parallel 1`. |
 | `--config FILE` | Alternate config file (default: `config.yaml` next to the script) |
 | `--yolo` | Skip preflight checks in each deploy script |
 | `--ttl DURATION` | Apply a TTL to all deployed resources (e.g. `7d`, `24h`) |

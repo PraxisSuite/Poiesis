@@ -20,6 +20,7 @@ The wizard can be driven entirely interactively, pre-filled from a deployment JS
 - [TTL / Expiry](#ttl--expiry)
 - [VLAN Check Behavior](#vlan-check-behavior)
 - [CPU Baseline Check (RHEL 10 family)](#cpu-baseline-check-rhel-10-family)
+  - [vCPU Cap Preflight](#vcpu-cap-preflight)
 - [FreeBSD Deployments (serial-console firstboot)](#freebsd-deployments-serial-console-firstboot)
 - [Preflight Behavior](#preflight-behavior)
 - [Walkthrough: VM Prompt Order](#walkthrough-vm-prompt-order)
@@ -212,6 +213,17 @@ When the resolved value comes from anywhere other than the global default, the d
 - Returns to node selection so you can pick a compatible one without restarting the wizard
 
 This check is skipped when (a) the deployment JSON has an explicit `cpu_type` field (operator override always wins), or (b) the deploy is running in silent / batch mode — there, the existing `check_node_cpu_baseline` preflight still catches the same mismatch in ~15 seconds with the same error message, before any expensive SFTP work.
+
+**Node picker also filters on CPU baseline + vCPU cap.** Both the interactive picker and silent auto-pick now exclude nodes that can't satisfy the deployment up front, instead of letting you select an incompatible one and discovering it later:
+
+- **CPU baseline filter** — when the image's catalog entry has `cpu_baseline` set, nodes missing the required CPU flags are hidden (silent auto-pick) or excluded from the "most free RAM" sort (interactive). Example: a Rocky 10 deploy (`x86-64-v3`) excludes Sandy/Ivy Bridge hosts before they're offered.
+- **vCPU cap filter** — Proxmox enforces a per-VM cap of `cores × threads-per-core` on each node. Nodes whose `maxcpu` is below the requested `cpus` are hidden. Example: a `cpus: 16` deploy excludes any node with fewer than 16 hardware threads.
+
+Both filters compose: a 16-vCPU Rocky 10 deploy in a mixed-CPU cluster is only offered hosts that are *both* Haswell+ *and* have ≥16 threads.
+
+### vCPU Cap Preflight
+
+Even when the picker did its job, a hard preflight runs at the start of every deploy: if the chosen node's `maxcpu` is below the requested `cpus`, the deploy aborts immediately with the same `MAX <n> vcpus allowed per VM on this node` message Proxmox would have given at `qm start` — plus a hint listing nodes that *could* host the request. The preflight is the backstop for file-driven deploys that hard-code a `node:` field; the picker filter is the prevention for everything else.
 
 ---
 

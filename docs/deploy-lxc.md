@@ -19,6 +19,7 @@ The wizard can be driven entirely interactively, pre-filled from a deployment JS
 - [Dry-Run Mode](#dry-run-mode)
 - [TTL / Expiry](#ttl--expiry)
 - [VLAN Check Behavior](#vlan-check-behavior)
+- [CPU Baseline & vCPU Cap Checks](#cpu-baseline--vcpu-cap-checks)
 - [Preflight Behavior](#preflight-behavior)
 - [LXC Feature Flags](#lxc-feature-flags)
 - [Downloading LXC Templates](#downloading-lxc-templates)
@@ -180,6 +181,43 @@ See [expiry.md](expiry.md) for the full TTL management workflow.
 Before creating the container, the script verifies that the requested VLAN exists on the target node. For traditional VLAN bridges, it looks for a `vmbr0.220`-style interface in the node's network list. For VLAN-aware bridges, the check passes for any VLAN tag — the bridge accepts all tags and relies on upstream switch configuration to enforce VLAN membership.
 
 > **Note:** If your container gets an IP but it is on the wrong network, verify the VLAN is trunked on the physical port connected to the Proxmox node. The VLAN check cannot detect upstream switch misconfigurations.
+
+---
+
+## CPU Baseline & vCPU Cap Checks
+
+LXCs run the same CPU baseline and vCPU cap checks as VMs — different mechanism (LXCs share the host kernel; userspace binaries inside need to match the host CPU), same failure surface (Rocky 10 LXC tools SIGILL on a Sandy/Ivy Bridge host even though the container starts).
+
+### CPU Baseline
+
+The required microarch baseline for an LXC template is matched from filename patterns in `lxc-bootstrap.yaml`'s `template_cpu_baselines:` section. The shipped patterns flag the RHEL 10 family:
+
+```yaml
+template_cpu_baselines:
+  - pattern: "rockylinux-1[0-9]"
+    cpu_baseline: x86-64-v3
+  - pattern: "almalinux-1[0-9]"
+    cpu_baseline: x86-64-v3
+  - pattern: "centos-1[0-9]"
+    cpu_baseline: x86-64-v3
+```
+
+When the deployment's `template_name` matches one of these patterns, the target node's `cpuinfo.flags` is checked against the required flags for that baseline (`avx2`, `bmi1`, `bmi2`, `fma`, `movbe`, `abm` for `x86-64-v3`). A mismatch fails the deploy before `pct create` runs, with output identical to the VM case:
+
+```
+✗ Node proxmoxb01 cannot run cpu=x86-64-v3: CPU is missing flag(s) avx2, bmi1, bmi2, fma, movbe, abm
+  CPU on proxmoxb01: Intel(R) Xeon(R) CPU E5-2640 v2 @ 2.00GHz
+```
+
+Adding a new pattern is a YAML edit — no Python changes needed. `re.search` semantics; first-match wins.
+
+### vCPU Cap
+
+Proxmox enforces a per-CT vCPU cap (`cores × threads-per-core`) on each node, the same way it does for VMs. The preflight queries each node's `cpuinfo.cpus` total and aborts the deploy with a list of capable nodes if the requested `cpus` exceeds the cap.
+
+### Node Picker Filtering
+
+Both filters also apply at node-selection time. The interactive picker hides nodes that can't satisfy the deployment, and silent auto-pick chooses the most-free-RAM node *among compatible nodes only*. A Rocky 10 LXC deployed to a mixed-CPU cluster will skip Sandy/Ivy Bridge hosts even when they have the most free RAM — the picker shows only the v3-capable subset, with vCPU-cap-failing nodes also excluded.
 
 ---
 

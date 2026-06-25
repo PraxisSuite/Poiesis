@@ -48,7 +48,8 @@ These checks run automatically at the start of every interactive or silent deplo
 | Check | Fatal? | Where documented |
 |---|---|---|
 | VLAN exists on target node | Warning | [deploy-vm.md → VLAN Check Behavior](deploy-vm.md#vlan-check-behavior), [deploy-lxc.md](deploy-lxc.md) |
-| CPU baseline supports `cpu_type` | **Fatal** | [deploy-vm.md → CPU Baseline Check](deploy-vm.md#cpu-baseline-check-rhel-10-family) — verifies the host has every flag the requested QEMU `-cpu` model needs (catches RHEL-10-family-on-pre-Haswell mismatches before any SFTP upload) |
+| CPU baseline supports `cpu_type` (VMs + LXCs) | **Fatal** | [deploy-vm.md → CPU Baseline Check](deploy-vm.md#cpu-baseline-check-rhel-10-family), [deploy-lxc.md → CPU Baseline & vCPU Cap Checks](deploy-lxc.md#cpu-baseline--vcpu-cap-checks) — verifies the host has every flag the requested QEMU `-cpu` model needs (catches RHEL-10-family-on-pre-Haswell mismatches before any SFTP upload). For LXCs the baseline is matched from template-name patterns in `lxc-bootstrap.yaml`'s `template_cpu_baselines:`. |
+| vCPU cap allows requested `cpus` (VMs + LXCs) | **Fatal** | [deploy-vm.md → CPU Baseline Check](deploy-vm.md#cpu-baseline-check-rhel-10-family), [deploy-lxc.md → CPU Baseline & vCPU Cap Checks](deploy-lxc.md#cpu-baseline--vcpu-cap-checks) — Proxmox enforces a per-VM/CT cap of `cores × threads-per-core` on each node; this preflight catches mismatches before `qm start` / `pct create` would reject them and lists nodes that *could* host the request. |
 | Bridges exist on target node (BIG-IP) | **Fatal** | [deploy-bigip.md](deploy-bigip.md) |
 | Appliance image staged (BIG-IP) | **Fatal** | [deploy-bigip.md](deploy-bigip.md) |
 

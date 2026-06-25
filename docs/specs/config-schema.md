@@ -316,7 +316,7 @@ vm:
 | Field | Required | Type | Description |
 |---|---|---|---|
 | `default_cloud_image_storage` | optional | string | Default storage pre-selected for cloud image downloads. Must support `iso` content type in Proxmox. Leave blank to always prompt. |
-| `cpu_type` | optional | string | Default QEMU `-cpu` model used by `deploy_vm.py` when the deployment JSON doesn't specify a `cpu_type` field. `x86-64-v2-AES` requires host CPU support for AES-NI (any post-2010 chip); `kvm64` is the most-compatible fallback. Per-deployment override available via the `cpu_type` field in the deployment JSON — see [deployment-file.md](deployment-file.md). RHEL 10 family deploys (Rocky 10, Alma 10) must override to `x86-64-v3`. |
+| `cpu_type` | optional | string | Default QEMU `-cpu` model used by `deploy_vm.py` when the deployment JSON doesn't specify a `cpu_type` field. `x86-64-v2-AES` requires host CPU support for AES-NI (any post-2010 chip); `kvm64` is the most-compatible fallback. Per-deployment override available via the `cpu_type` field in the deployment JSON — see [deployment-file.md](deployment-file.md). RHEL 10 family deploys (Rocky 10, Alma 10) need `x86-64-v3`, but this is auto-resolved from `cloud-images.yaml`'s `cpu_baseline` field — no operator action needed unless overriding. |
 | `machine` | optional | string | VM machine type. `q35` (modern, recommended) or `i440fx` (legacy). |
 | `bios` | optional | string | VM BIOS type. `seabios` (standard) or `ovmf` (UEFI). |
 | `storage_controller` | optional | string | VM disk controller. `virtio-scsi-pci` recommended for performance. |

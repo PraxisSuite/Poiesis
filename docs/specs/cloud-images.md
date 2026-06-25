@@ -81,9 +81,11 @@ and [known-bugs.md BUG-010](../../known-bugs.md) for the full background.
 **RHEL 10 family note (Rocky 10, AlmaLinux 10, CentOS Stream 10):** Red Hat raised
 the baseline microarchitecture to `x86-64-v3` (Haswell-era). Cloud-init starts and the
 disk imports fine on any Proxmox host, but the kernel will boot-loop on pre-Haswell CPUs
-(Sandy/Ivy Bridge Xeons, older Atoms). When deploying these images, set
-`"cpu_type": "x86-64-v3"` in the deployment JSON — see
-[deploy-vm.md → CPU Baseline Check](../deploy-vm.md#cpu-baseline-check-rhel-10-family).
+(Sandy/Ivy Bridge Xeons, older Atoms). The catalog entries for these images carry
+`cpu_baseline: x86-64-v3`, so `deploy_vm.py` resolves the right `cpu_type` automatically
+and the node picker excludes pre-Haswell hosts from auto-pick and interactive selection —
+no operator action needed unless explicitly overriding via `"cpu_type"` in the deployment
+JSON. See [deploy-vm.md → CPU Baseline Check](../deploy-vm.md#cpu-baseline-check-rhel-10-family).
 
 ---
 
