@@ -404,7 +404,9 @@ def main() -> None:
     parser.add_argument("--parallel", metavar="N", type=int, default=3,
                         help="Max concurrent deployments (default: 3, use 1 for sequential)")
     parser.add_argument("--stagger", metavar="SECS", type=int, default=45,
-                        help="Seconds between each job start in parallel mode (default: 45, use 0 to disable)")
+                        help="Seconds between each job start per target node in parallel mode (default: 45, use 0 to disable)")
+    parser.add_argument("--node-serial", action="store_true",
+                        help="Strictly serialize jobs targeting the same Proxmox node — only one job per node runs at a time, regardless of --parallel. Different nodes still run concurrently. Stacks with --stagger.")
 
     args = parser.parse_args()
 
@@ -431,9 +433,12 @@ def main() -> None:
 
     parallel = max(1, args.parallel)
     stagger = max(0, args.stagger) if parallel > 1 else 0
+    node_serial = args.node_serial and parallel > 1
     mode_label = f"parallel ×{parallel}" if parallel > 1 else "sequential"
     if stagger and parallel > 1:
         mode_label += f"  stagger {stagger}s"
+    if node_serial:
+        mode_label += "  node-serial"
     console.print()
     console.print(Panel.fit(
         Text(f"Poiesis Batch Deploy — {len(files)} file(s)  [{mode_label}]", style="bold", justify="center"),
@@ -494,6 +499,29 @@ def main() -> None:
                     statuses[hostname] = status
                 live.update(make_renderable())
 
+            # Per-node serialization (--node-serial): a Lock per target node,
+                # acquired by the worker thread before deploy_one runs and released
+                # at completion. Independent of stagger: stagger spaces submissions
+                # by node, the lock prevents simultaneous execution on the same
+                # node. Lazy init under a meta-lock keeps the dict thread-safe.
+            node_locks: dict[str, threading.Lock] = {}
+            node_locks_meta = threading.Lock()
+
+            def _serialize_by_node(path: Path, kind: str, *args, **kwargs):
+                target_node = peek_node(path) or ""
+                with node_locks_meta:
+                    lock = node_locks.setdefault(target_node, threading.Lock())
+                hostname = peek_hostname(path)
+                if not lock.acquire(blocking=False):
+                    on_status(hostname, f"[dim]waiting for {target_node or 'node'}...[/dim]")
+                    lock.acquire()
+                try:
+                    return deploy_one(path, kind, *args, **kwargs)
+                finally:
+                    lock.release()
+
+            worker = _serialize_by_node if node_serial else deploy_one
+
             with ThreadPoolExecutor(max_workers=parallel) as executor:
                 # Per-node stagger: API/SFTP/cloud-init contention is per-node,
                 # so jobs targeting different nodes shouldn't wait on each other.
@@ -508,7 +536,7 @@ def main() -> None:
                                 time.sleep(wait)
                         node_last_start[target_node] = time.time()
                     f = executor.submit(
-                        deploy_one, path, kind, running_vmids, passthrough,
+                        worker, path, kind, running_vmids, passthrough,
                         disp_i, total, on_status,
                     )
                     future_to_list_i[f] = list_i

@@ -1064,28 +1064,32 @@ prompt appears. `--silent` mode is unaffected.
 ---
 
 
-## Batch Deploy Node-Aware Staging
+## Batch Deploy Node-Aware Staging — **Implemented**
 
 When deploying in parallel, multiple containers/VMs targeted at the same Proxmox node run
 concurrently, which can cause resource contention (CPU, disk I/O, network) during the busiest
 parts of deployment (template extraction, apt upgrade, Ansible).
 
-### Proposed behavior
+Two complementary mechanisms now ship:
 
-Add a `--node-serial` flag (or make it the default) that groups jobs by target node and ensures
-no two jobs deploying to the same node run simultaneously. Jobs on different nodes still run in
-parallel.
+### Per-node stagger (always-on, BUG-015 fix)
 
-### Implementation notes
+`--stagger` is applied **per target node** rather than globally. Jobs targeting different
+nodes never wait on each other; jobs targeting the same node still respect the configured
+stagger delay between submissions. This eliminated the "5-host batch wastes 240s on
+unrelated nodes" pathology — cross-cluster batches fan out immediately.
 
-- Before dispatching jobs, group deployment files by their `node` field.
-- Use a per-node semaphore (`threading.Semaphore(1)`) so only one job per node runs at a time.
-- Jobs for different nodes are still submitted to the ThreadPoolExecutor concurrently — the
-  semaphore gates the actual work, not the submission.
-- The status board already shows the target node per host — staggered starts would be visible
-  there naturally.
-- `--parallel N` would still control total concurrency; node-serial would add an additional
-  per-node constraint on top.
+### Per-node serialization (`--node-serial`, opt-in)
+
+A `--node-serial` flag goes beyond stagger and *strictly serializes* jobs targeting the same
+node — only one job per node runs at a time, regardless of `--parallel`. Different nodes still
+run concurrently. Useful for nodes under heavy parallel load where staggered starts still
+overlap during long-tail steps (Ansible playbook, dnf upgrade, cloud-init).
+
+Implementation: a `threading.Lock` per target node, lazily created under a meta-lock, acquired
+by the worker thread before `deploy_one` runs and released at completion. Jobs that block on
+the lock surface a `waiting for <node>...` status on the live board so it's obvious why a
+slot is idle. Stacks with `--stagger` — both can be active simultaneously.
 
 ---
 
